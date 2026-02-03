@@ -1,0 +1,42 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+.venv312/
+env/
+ENV/
+
+# Dependencies
+pip-wheel-metadata/
+*.egg-info/
+
+# Logs and temporary files
+*.log
+*.out
+*.err
+*.pid
+
+# Local databases and runtime data
+data/
+*.db
+*.sqlite3
+*.sqlite
+backend_uvicorn.*
+debug_rotate.py
+
+# Configuration or secret files
+.env
+
+# macOS
+.DS_Store
+
+# Static build artifacts
+__pycache__/
+
+# Node (just in case)
+node_modules/
+

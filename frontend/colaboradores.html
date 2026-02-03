@@ -1,0 +1,608 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <title>Área de Colaboradores - Nexen.ai</title>
+    <style>
+      :root {
+        --bg-1: #ede9fe;
+        --bg-2: #f5f5ff;
+        --surface: rgba(255, 255, 255, 0.9);
+        --border: rgba(79, 70, 229, 0.2);
+        --accent: #4338ca;
+        --text: #1f2040;
+        --muted: #52526b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+        background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 65%, #ffffff 100%);
+        color: var(--text);
+        min-height: 100vh;
+      }
+
+      .collab-page {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .collab-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem clamp(1rem, 3vw, 2rem);
+      }
+
+      .collab-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .collab-brand img {
+        height: 36px;
+      }
+
+      .collab-actions {
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+      }
+
+      .collab-actions a,
+      .ghost-button,
+      .primary-button,
+      .collab-cta {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .collab-actions a:hover,
+      .ghost-button:hover,
+      .primary-button:hover,
+      .collab-cta:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 20px rgba(67, 56, 202, 0.15);
+      }
+
+      .collab-main {
+        width: min(1200px, 100%);
+        margin: 0 auto;
+        padding: 0 1.5rem 3rem;
+        flex: 1;
+      }
+
+      .collab-card {
+        background: var(--surface);
+        border-radius: 28px;
+        padding: 2rem;
+        margin-bottom: 1.75rem;
+        box-shadow: 0 30px 60px rgba(15, 15, 45, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.8);
+      }
+
+      .collab-hero {
+        background: linear-gradient(180deg, #fdfaff 0%, #f4f1ff 65%, #ede9ff 100%);
+        border-radius: 28px;
+        padding: 2rem;
+        box-shadow: 0 25px 60px rgba(15, 15, 45, 0.15);
+        margin-bottom: 1.5rem;
+      }
+
+      .collab-hero-text h2 {
+        margin: 0.25rem 0;
+        font-size: 1.8rem;
+        color: var(--text);
+      }
+
+      .collab-hero-stats {
+        margin-top: 1.25rem;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+      }
+
+      .collab-hero-stat {
+        background: #fff;
+        border-radius: 20px;
+        padding: 1rem;
+        display: flex;
+        gap: 0.75rem;
+        align-items: flex-start;
+        border: 1px solid rgba(67, 56, 202, 0.12);
+      }
+
+      .stat-card-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        background: rgba(67, 56, 202, 0.12);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+      }
+
+      .collab-hero-stat span {
+        font-size: 0.85rem;
+        color: var(--muted);
+        display: block;
+      }
+
+      .collab-hero-stat strong {
+        font-size: 2rem;
+        margin-top: 0.2rem;
+        display: block;
+      }
+
+      .collab-hero-stat small {
+        display: block;
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-top: 0.25rem;
+      }
+
+      .collab-panel-top {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: center;
+        margin-bottom: 1.5rem;
+      }
+
+      .collab-panel-title h3 {
+        margin: 0;
+        font-size: 1.5rem;
+      }
+
+      .collab-panel-controls {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+      }
+
+      .collab-search {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        background: #fff;
+        border-radius: 999px;
+        border: 1px solid rgba(67, 56, 202, 0.2);
+        padding: 0.15rem 0.75rem;
+      }
+
+      .collab-search input {
+        border: none;
+        outline: none;
+        padding: 0.45rem 0.5rem;
+        min-width: 220px;
+        font-size: 0.95rem;
+        border-radius: 999px;
+      }
+
+      .collab-search-icon {
+        margin-right: 0.2rem;
+        font-size: 1rem;
+        color: rgba(67, 56, 202, 0.7);
+      }
+
+      .collab-cta--success {
+        background: #1fbc6a;
+        box-shadow: 0 10px 20px rgba(31, 188, 106, 0.35);
+      }
+
+      .collab-panel {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .collab-panel.hidden {
+        display: none;
+      }
+
+      .collab-card form,
+      .collab-login form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.9rem;
+        margin-top: 1rem;
+      }
+
+      .collab-card form input,
+      .collab-card form select,
+      .collab-login form input {
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 14px;
+        border: 1px solid rgba(67, 56, 202, 0.25);
+        padding: 0.85rem 1rem;
+        font-size: 1rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .collab-card form input:focus,
+      .collab-card form select:focus,
+      .collab-login form input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        outline: none;
+      }
+
+      .collab-panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+      }
+
+      .collab-panel-header div {
+        max-width: 300px;
+      }
+
+      .collab-panel-header h3 {
+        margin: 0;
+      }
+
+      .collab-panel-header small {
+        color: var(--muted);
+      }
+
+      .collab-panel-header button {
+        min-width: 120px;
+      }
+
+      .collab-status {
+        min-height: 1.5rem;
+        margin-bottom: 1rem;
+        color: #dc3545;
+      }
+
+      .collab-org-list {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .collab-org-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 1rem 1.25rem;
+        border: 1px solid rgba(15, 15, 45, 0.08);
+        display: grid;
+        gap: 0.35rem;
+      }
+
+      .collab-org-card header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: 600;
+      }
+
+      .collab-org-card header span:first-child {
+        font-size: 1.1rem;
+        color: var(--text);
+      }
+
+      .collab-org-card header .pill {
+        margin-left: auto;
+        padding: 0.25rem 0.9rem;
+        font-size: 0.75rem;
+        text-transform: none;
+      }
+
+      .collab-org-card p {
+        margin: 0;
+        font-size: 0.9rem;
+      }
+
+      .collab-org-card > div {
+        display: grid;
+        gap: 0.25rem;
+      }
+
+      .collab-org-card .collab-actions {
+        justify-content: flex-start;
+        margin-top: 0.5rem;
+      }
+
+      .pill {
+        padding: 0.25rem 0.85rem;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #4338ca;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+
+      .pill-active {
+        background: #dcfce7;
+        color: #166534;
+      }
+
+      .pill-inactive {
+        background: #fee2e2;
+        color: #b91c1c;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .limit-form {
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .limit-form input {
+        width: 90px;
+        padding: 0.35rem 0.6rem;
+        border-radius: 8px;
+        border: 1px solid rgba(99, 102, 241, 0.4);
+      }
+
+      .collab-cta {
+        background: var(--accent);
+        color: #fff;
+        padding: 0.85rem 1.5rem;
+        border-radius: 14px;
+        border: none;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      .ghost-button {
+        background: #fff;
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        border-radius: 14px;
+        padding: 0.65rem 1.25rem;
+        text-decoration: none;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .primary-button {
+        background: var(--accent);
+        color: #fff;
+        border-radius: 14px;
+        padding: 0.65rem 1.35rem;
+        text-decoration: none;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+      }
+
+      .collab-login {
+        max-width: 440px;
+        background: #fff;
+        border-radius: 24px;
+        padding: 2rem;
+        box-shadow: 0 25px 50px rgba(15, 15, 45, 0.12);
+        margin-bottom: 1.75rem;
+      }
+
+      .collab-login h1 {
+        margin: 0.1rem 0;
+        font-size: 1.8rem;
+      }
+
+      .collab-login .hero-pill {
+        display: inline-flex;
+        padding: 0.35rem 1rem;
+        border-radius: 999px;
+        font-size: 0.85rem;
+        background: rgba(99, 102, 241, 0.15);
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .collab-login p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .form-error {
+        color: #b91c1c;
+        min-height: 1.25rem;
+        margin: 0;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      @media (max-width: 768px) {
+        .collab-card,
+        .collab-login {
+          padding: 1.5rem;
+        }
+
+        .collab-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 0.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="collab-page">
+      <header class="collab-header">
+        <div class="collab-brand">
+          <img src="/static/assets/logonex.png" alt="Nexen.ai" />
+          <strong>Nexen.ai</strong>
+        </div>
+        <div class="collab-actions">
+          <a class="ghost-button" href="/">Voltar ao site</a>
+          <a class="primary-button" href="/colaboradores.html">Colaboradores</a>
+        </div>
+      </header>
+      <main class="collab-main">
+        <section id="collabLoginSection" class="collab-card collab-login">
+          <p class="hero-pill">Acesso interno</p>
+          <h1>Área de Colaboradores</h1>
+          <p>
+            Faça login com sua conta administrativa para cadastrar novos clientes, ajustar credenciais Uazapi
+            e acompanhar o parque de instâncias.
+          </p>
+          <form id="collabLoginForm">
+            <p class="muted">
+              Informe as credenciais de colaborador da Nexen (sem slug). Este login dá acesso ao painel
+              administrativo onde você pode criar e gerenciar todos os clientes.
+            </p>
+            <label for="collabUsername">Usuário</label>
+            <input id="collabUsername" name="username" placeholder="admin" required />
+            <label for="collabPassword">Senha</label>
+            <input id="collabPassword" name="password" type="password" placeholder="Senha" required />
+            <button class="collab-cta" type="submit">Entrar</button>
+            <p id="collabLoginError" class="form-error" aria-live="polite"></p>
+          </form>
+        </section>
+        <section id="collabPanel" class="collab-panel hidden">
+          <div class="collab-panel-header">
+            <div>
+              <h3>Painel administrativo da Nexen.ai</h3>
+              <small id="collabInfo">Acompanhe instâncias, credenciais e clientes em um só lugar.</small>
+            </div>
+            <button id="collabLogoutButton" class="ghost-button">Sair</button>
+          </div>
+          <p id="collabStatusMessage" class="form-error"></p>
+          <div class="collab-summary-grid">
+            <article class="summary-card">
+              <div class="summary-card-icon" aria-hidden="true">🏢</div>
+              <div>
+                <p>Total de Organizações</p>
+                <strong id="summaryOrgCount">0</strong>
+                <small><span id="summaryOrgActive">0 ativas</span></small>
+              </div>
+            </article>
+            <article class="summary-card">
+              <div class="summary-card-icon" aria-hidden="true">🧑</div>
+              <div>
+                <p>Total de Usuários</p>
+                <strong id="summaryUserCount">0</strong>
+                <small>Em todas as organizações</small>
+              </div>
+            </article>
+            <article class="summary-card">
+              <div class="summary-card-icon" aria-hidden="true">💬</div>
+              <div>
+                <p>Mensagens do Mês</p>
+                <strong id="summaryMessagesCount">0</strong>
+                <small>+<span id="summaryMessagesGrowth">0%</span> em relação ao mês anterior</small>
+              </div>
+            </article>
+            <article class="summary-card">
+              <div class="summary-card-icon" aria-hidden="true">📈</div>
+              <div>
+                <p>Taxa de Crescimento</p>
+                <strong id="summaryGrowthRate">0%</strong>
+                <small>Novos usuários este mês</small>
+              </div>
+            </article>
+          </div>
+          <div class="collab-panel-top">
+            <div class="collab-panel-title">
+              <h3>Organizações</h3>
+              <div class="collab-panel-meta">
+                <span id="collabOrgHint" class="muted">Nenhuma pesquisa aplicada</span>
+                <span id="collabUpdatedAt" class="muted"></span>
+              </div>
+            </div>
+            <div class="collab-panel-controls">
+              <label class="collab-search">
+                <span class="collab-search-icon" aria-hidden="true">🔍</span>
+                <input id="orgSearchInput" type="search" placeholder="Buscar organizações..." />
+              </label>
+              <div class="collab-icon-group">
+                <button type="button" class="icon-button" aria-label="Notificações">
+                  🔔
+                  <span class="icon-indicator"></span>
+                </button>
+                <button type="button" class="icon-button" aria-label="Perfil">
+                  👤
+                </button>
+              </div>
+              <button id="newOrgButton" type="button" class="collab-cta collab-cta--success">
+                + Nova Organização
+              </button>
+            </div>
+          </div>
+          <div id="collabOrgList" class="collab-org-grid"></div>
+          <div class="collab-card">
+            <h2>Cadastrar novo cliente</h2>
+            <form id="createOrgForm">
+              <label for="newOrgName">Nome da empresa</label>
+              <input id="newOrgName" name="name" placeholder="Nome da empresa" required />
+              <label for="newOrgSlug">Slug (endereço)</label>
+              <input id="newOrgSlug" name="slug" placeholder="ex: meu-cliente" required />
+              <label for="newOrgAdmin">Usuário administrador</label>
+              <input id="newOrgAdmin" name="admin_username" placeholder="admin" required />
+              <label for="newOrgPassword">Senha do administrador</label>
+              <input
+                id="newOrgPassword"
+                name="admin_password"
+                type="password"
+                placeholder="Senha"
+                required
+              />
+              <label for="newOrgFullName">Nome completo (opcional)</label>
+              <input id="newOrgFullName" name="admin_full_name" placeholder="Ex: João da Silva" />
+              <label for="newOrgUrl">Server URL da Uazapi (opcional)</label>
+              <input
+                id="newOrgUrl"
+                name="uazapi_server_url"
+                placeholder="https://nexenaioficial.uazapi.com"
+              />
+              <label for="newOrgToken">Admin Token (opcional)</label>
+              <input id="newOrgToken" name="uazapi_admin_token" placeholder="Token do painel" />
+              <label for="newOrgLimit">Limite de usuários</label>
+              <input
+                id="newOrgLimit"
+                name="user_limit"
+                type="number"
+                min="0"
+                placeholder="05"
+              />
+              <small>Informe 0 para ilimitado.</small>
+              <label for="newOrgWebhook">URL do webhook</label>
+              <input
+                id="newOrgWebhook"
+                name="webhook_url"
+                placeholder="https://seusite.com/api/webhook"
+              />
+              <button class="collab-cta" type="submit">Criar cliente</button>
+            </form>
+          </div>
+          <div class="collab-card">
+            <h2>Credenciais Uazapi</h2>
+            <form id="credentialForm">
+              <label for="credentialOrg">Selecione o cliente</label>
+              <select id="credentialOrg" required></select>
+              <label for="credentialServerUrl">Server URL</label>
+              <input id="credentialServerUrl" placeholder="https://..." />
+              <label for="credentialAdminToken">Admin Token</label>
+              <input id="credentialAdminToken" placeholder="Token administrativo" />
+              <label for="credentialWebhook">Webhook URL</label>
+              <input id="credentialWebhook" placeholder="https://seusite.com/api/webhook" />
+              <button class="collab-cta" type="submit">Atualizar credenciais</button>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/static/collab.js" defer></script>
+  </body>
+</html>

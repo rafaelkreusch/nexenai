@@ -1,0 +1,14 @@
+.git
+.venv
+.venv312
+__pycache__
+backend/.venv
+backend/.venv312
+backend/__pycache__
+backend/data/logs
+backend/backend_uvicorn.err
+backend/backend_uvicorn.log
+backend/*.pyc
+frontend/node_modules
+clean-repo
+*.pyc

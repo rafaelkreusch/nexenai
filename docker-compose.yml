@@ -1,0 +1,33 @@
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: chat-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: chatdevalor
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chat-backend
+    env_file:
+      - backend/.env
+    environment:
+      DATABASE_URL: postgresql://appuser:secret@postgres:5432/chatdevalor
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./backend/data:/app/backend/data
+
+volumes:
+  postgres_data:
