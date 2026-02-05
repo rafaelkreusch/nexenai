@@ -14,4 +14,6 @@ COPY frontend/ /app/frontend/
 RUN pip install --upgrade pip setuptools \
     && pip install --no-cache-dir -r requirements.txt
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+RUN chmod +x /app/backend/start.sh
+
+CMD ["/app/backend/start.sh"]

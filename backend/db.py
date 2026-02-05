@@ -24,6 +24,8 @@ def _create_engine(url: str) -> Tuple[Engine, bool]:
 
 
 DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{DATABASE_FILE}"
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://") :]
 engine, IS_SQLITE = _create_engine(DATABASE_URL)
 
 if not IS_SQLITE:

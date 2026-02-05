@@ -112,3 +112,21 @@ O projeto já inclui `Dockerfile` e `docker-compose.yml` na raiz. Para rodar o b
 3. Se quiser liberar a porta 5432 para o host (ex.: para inspecionar via `psql`), o compose já mapeia `5432:5432`. Use `docker compose down` para parar os contêineres e `docker compose up` novamente quando quiser retomar.
 
 Com isso você tem um ambiente containerizado simples para testar no Fly.io, Render ou Azure antes de subir em produção.
+
+## Deploy no Render (teste)
+
+O Render injeta a variável `PORT` no container. O `Dockerfile` já inicia o Uvicorn lendo `PORT` (com fallback para `8000`).
+
+**Opção A — Blueprint (recomendado)**
+1. Suba este repositório no GitHub/GitLab.
+2. No Render: **New → Blueprint** e selecione o repo.
+3. O arquivo `render.yaml` cria:
+   - 1 Web Service (Docker)
+   - 1 PostgreSQL gerenciado e seta `DATABASE_URL` no serviço
+
+**Opção B — Manual**
+1. No Render: **New → Web Service → Docker** e selecione o repo.
+2. Crie um Render Postgres (ou use um externo) e configure `DATABASE_URL` nas env vars do serviço.
+3. Health check: `/api/health`.
+
+Observação: o filesystem do Render é efêmero; se você precisar persistir `backend/data` (mídias/logs), use um Disk no serviço ou mova o storage para S3 (o projeto já inclui `boto3`).
