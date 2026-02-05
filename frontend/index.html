@@ -130,11 +130,11 @@
 
           <img src="/static/assets/logonex.png" alt="Nexen.chat" class="auth-logo" />
 
-          <p><i>teste</i></p>
+          <p><strong>Login</strong></p>
 
           <label for="loginOrg">Empresa (slug)</label>
 
-          <input type="text" id="loginOrg" name="organization" placeholder="ex: minha-empresa" required />
+          <input type="text" id="loginOrg" name="organization" placeholder="ex: minha_empresa" required />
 
           <label for="username">Usuário <small>(apenas letras, números, "." ou "_")</small></label>
 
@@ -150,7 +150,7 @@
 
             pattern="[a-z0-9._]+"
 
-            placeholder="ex: rafael_kreusch"
+            placeholder="ex: nome.sobrenome01"
 
           />
 
@@ -160,7 +160,7 @@
 
           <button type="submit" class="primary">Entrar</button>
 
-          <small>Usuário padrão: admin / Senha: admin123 / Empresa: demo</small>
+          <small>Em caso de perda da senha, solicite ao administrador da organização a sua recuperação.</small>
 
           <p id="loginError" class="form-error" aria-live="polite"></p>
 
@@ -174,7 +174,7 @@
 
           <h1>Criar conta</h1>
 
-          <p>Cadastre sua empresa para usar o Chat de Valor</p>
+          <p>Cadastre sua empresa para usar a Nexen.ai</p>
 
           <label for="orgName">Nome da empresa</label>
 
@@ -182,13 +182,13 @@
 
           <label for="orgSlug">Endereço (slug)</label>
 
-          <input type="text" id="orgSlug" placeholder="ex: minha-empresa" required />
+          <input type="text" id="orgSlug" placeholder="ex: minha_empresa" required />
 
           <label for="registerFullName">Nome completo</label>
 
-          <input type="text" id="registerFullName" placeholder="Opcional" />
+          <input type="text" id="registerFullName" placeholder="" />
 
-          <label for="registerUsername">Usuário principal <small>(ex: rafael_kreusch)</small></label>
+          <label for="registerUsername">Usuário principal <small>(ex: nome.sobrenome01)</small></label>
 
           <input
 
@@ -200,7 +200,7 @@
 
             pattern="[a-z0-9._]+"
 
-            placeholder="ex: rafael_felipe"
+            placeholder="ex: nome.sobrenome01"
 
           />
 
