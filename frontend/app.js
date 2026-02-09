@@ -927,6 +927,7 @@ function insertEmojiAtCursor(emoji) {
   const caret = start + emoji.length;
   messageInput.selectionStart = messageInput.selectionEnd = caret;
   messageInput.focus();
+  scheduleMessageInputResize();
 }
 
 function openNoteModal() {
@@ -972,6 +973,30 @@ function setMessageFormAvailability(enabled) {
   if (!enabled) {
     closeEmojiPicker();
   }
+  scheduleMessageInputResize();
+}
+
+function resizeMessageInput() {
+  if (!messageInput) return;
+  messageInput.style.height = "auto";
+  const computed = window.getComputedStyle(messageInput);
+  const maxHeight = Number.parseFloat(computed.maxHeight);
+  const maxPx = Number.isFinite(maxHeight) ? maxHeight : 168;
+  const targetHeight = Math.min(messageInput.scrollHeight, maxPx);
+  messageInput.style.height = `${targetHeight}px`;
+  messageInput.style.overflowY = messageInput.scrollHeight > maxPx ? "auto" : "hidden";
+}
+
+let pendingMessageInputResize = 0;
+function scheduleMessageInputResize() {
+  if (!messageInput) return;
+  if (pendingMessageInputResize) {
+    window.cancelAnimationFrame(pendingMessageInputResize);
+  }
+  pendingMessageInputResize = window.requestAnimationFrame(() => {
+    pendingMessageInputResize = 0;
+    resizeMessageInput();
+  });
 }
 
 function updateNoteButtonState() {
@@ -3727,6 +3752,7 @@ if (messageForm) {
   const originalContent = content;
 
   messageInput.value = "";
+  scheduleMessageInputResize();
 
   try {
 
@@ -3763,6 +3789,7 @@ if (messageForm) {
   } catch (error) {
 
     messageInput.value = originalContent;
+    scheduleMessageInputResize();
 
     alert(error.message);
 
@@ -3774,6 +3801,13 @@ if (messageForm) {
 
 
 if (messageInput && messageForm) {
+
+  messageInput.addEventListener("input", () => {
+    scheduleMessageInputResize();
+  });
+
+  // Set the initial height once styles are applied.
+  scheduleMessageInputResize();
 
   messageInput.addEventListener("keydown", (event) => {
 

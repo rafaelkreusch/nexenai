@@ -4404,7 +4404,7 @@ select:focus {
   border-top: 1px solid var(--border);
   display: flex;
   gap: 0.55rem;
-  align-items: center;
+  align-items: flex-end;
   background: #ffffff;
 }
 
@@ -4521,8 +4521,8 @@ select:focus {
 
 
 .message-form textarea {
-
-  flex: 1;
+  width: 100%;
+  flex: 0 0 auto;
 
   resize: none;
 
@@ -4533,6 +4533,9 @@ select:focus {
   font-size: 0.9rem;
 
   min-height: 44px;
+  max-height: 168px;
+  overflow-y: hidden;
+  line-height: 1.35;
 
   padding: 0;
 
