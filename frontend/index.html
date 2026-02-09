@@ -801,6 +801,8 @@
 
               </div>
 
+              <div id="quickReplyPanel" class="quick-reply-panel hidden" role="listbox" aria-label="Respostas rápidas"></div>
+
               <textarea id="messageInput" rows="2" placeholder="Digite a mensagem" disabled></textarea>
 
             </div>
@@ -1196,13 +1198,68 @@
 
           </div>
 
+          <button id="settingsBack" class="ghost small hidden" type="button" aria-label="Voltar">←</button>
           <button id="closeSettings" aria-label="Fechar">×</button>
 
         </header>
 
         <div class="modal-body">
 
-          <div class="settings-grid">
+          <div class="settings-shell">
+
+            <section id="settingsHome" class="settings-home">
+
+              <button type="button" class="settings-nav-item" data-settings-target="settingsSummarySection">
+
+                <span class="settings-nav-icon" aria-hidden="true">🏢</span>
+
+                <span class="settings-nav-copy">
+
+                  <strong>Organização</strong>
+
+                  <span>Resumo da empresa e do usuário conectado.</span>
+
+                </span>
+
+                <span class="settings-nav-arrow" aria-hidden="true">›</span>
+
+              </button>
+
+              <button type="button" class="settings-nav-item" data-settings-target="settingsUsersSection" data-admin-only>
+
+                <span class="settings-nav-icon" aria-hidden="true">👥</span>
+
+                <span class="settings-nav-copy">
+
+                  <strong>Usuários</strong>
+
+                  <span>Gerencie acessos, administradores e senhas.</span>
+
+                </span>
+
+                <span class="settings-nav-arrow" aria-hidden="true">›</span>
+
+              </button>
+
+              <button type="button" class="settings-nav-item" data-settings-target="settingsQuickRepliesSection">
+
+                <span class="settings-nav-icon" aria-hidden="true">⚡</span>
+
+                <span class="settings-nav-copy">
+
+                  <strong>Respostas rápidas</strong>
+
+                  <span>Atalhos com “/” para inserir mensagens prontas.</span>
+
+                </span>
+
+                <span class="settings-nav-arrow" aria-hidden="true">›</span>
+
+              </button>
+
+            </section>
+
+            <section id="settingsSummarySection" class="settings-section hidden">
 
             <section class="settings-card summary-card">
 
@@ -1255,6 +1312,10 @@
               </div>
 
             </section>
+
+            </section>
+
+            <section id="settingsUsersSection" class="settings-section hidden">
 
             <section class="settings-card user-admin hidden" id="userAdminSection">
 
@@ -1345,6 +1406,70 @@
                 </div>
 
               </div>
+
+            </section>
+
+            </section>
+
+            <section id="settingsQuickRepliesSection" class="settings-section hidden">
+
+            <section class="settings-card quick-replies-card" id="quickRepliesCard">
+
+              <header class="settings-card-head">
+
+                <div>
+
+                  <p class="eyebrow">Atalhos</p>
+
+                  <h3>Respostas rápidas</h3>
+
+                  <p class="card-subtitle">Digite "/" no chat para buscar e inserir respostas salvas.</p>
+
+                </div>
+
+              </header>
+
+              <div class="quick-replies-manager">
+
+                <div class="quick-replies-list" id="quickReplyList"></div>
+
+                <form id="quickReplyForm" class="quick-reply-form" autocomplete="off">
+
+                  <label for="quickReplyShortcut">Atalho</label>
+
+                  <input
+
+                    type="text"
+
+                    id="quickReplyShortcut"
+
+                    required
+
+                    pattern="[a-z0-9._-]+"
+
+                    placeholder="ex: obrigado"
+
+                  />
+
+                  <label for="quickReplyContent">Mensagem</label>
+
+                  <textarea id="quickReplyContent" rows="3" required placeholder="Texto que será inserido no chat"></textarea>
+
+                  <div class="quick-reply-actions">
+
+                    <button type="submit" class="primary">Salvar</button>
+
+                    <button type="button" id="quickReplyClear" class="ghost">Limpar</button>
+
+                  </div>
+
+                  <p id="quickReplyError" class="form-error"></p>
+
+                </form>
+
+              </div>
+
+            </section>
 
             </section>
 

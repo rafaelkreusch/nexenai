@@ -89,6 +89,10 @@ if (queryParams && loginForm) {
 const settingsModal = document.getElementById("settingsModal");
 
 const closeSettingsBtn = document.getElementById("closeSettings");
+const settingsBackButton = document.getElementById("settingsBack");
+const settingsHomeEl = document.getElementById("settingsHome");
+const settingsSections = document.querySelectorAll("#settingsModal .settings-section");
+const settingsNavItems = document.querySelectorAll("#settingsModal .settings-nav-item");
 
 const settingsUserEl = document.getElementById("settingsUser");
 
@@ -147,6 +151,14 @@ const newTagForm = document.getElementById("newTagForm");
 const newTagNameInput = document.getElementById("newTagName");
 
 const newTagColorInput = document.getElementById("newTagColor");
+
+const quickReplyPanel = document.getElementById("quickReplyPanel");
+const quickReplyListEl = document.getElementById("quickReplyList");
+const quickReplyForm = document.getElementById("quickReplyForm");
+const quickReplyShortcutInput = document.getElementById("quickReplyShortcut");
+const quickReplyContentInput = document.getElementById("quickReplyContent");
+const quickReplyClearButton = document.getElementById("quickReplyClear");
+const quickReplyErrorEl = document.getElementById("quickReplyError");
 
 const chatTitleEl = document.getElementById("chatTitle");
 
@@ -408,6 +420,9 @@ const state = {
   latestMessages: [],
   replyContext: null,
   emojiPickerOpen: false,
+  quickReplyOpen: false,
+  quickReplyIndex: 0,
+  quickReplyMatches: [],
   conversationNotes: [],
   bulkCampaigns: [],
 
@@ -477,6 +492,197 @@ const state = {
   imagePreviewOpen: false,
 
 };
+
+function getQuickRepliesStorageKey() {
+  const orgId = state.organization?.id ?? "0";
+  const userId = state.user?.id ?? "0";
+  return `quickReplies:${orgId}:${userId}`;
+}
+
+function loadQuickReplies() {
+  try {
+    const raw = localStorage.getItem(getQuickRepliesStorageKey());
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry) => ({
+        shortcut: String(entry.shortcut || "").trim().toLowerCase(),
+        content: String(entry.content || "").trim(),
+      }))
+      .filter((entry) => entry.shortcut && entry.content);
+  } catch {
+    return [];
+  }
+}
+
+function saveQuickReplies(replies) {
+  const normalized = (replies || [])
+    .map((entry) => ({
+      shortcut: String(entry.shortcut || "").trim().toLowerCase(),
+      content: String(entry.content || "").trim(),
+    }))
+    .filter((entry) => entry.shortcut && entry.content);
+  localStorage.setItem(getQuickRepliesStorageKey(), JSON.stringify(normalized));
+}
+
+function renderQuickRepliesManager() {
+  if (!quickReplyListEl) return;
+  const replies = loadQuickReplies();
+  quickReplyListEl.innerHTML = "";
+
+  if (!replies.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Nenhuma resposta rápida cadastrada ainda.";
+    quickReplyListEl.appendChild(empty);
+    return;
+  }
+
+  replies
+    .slice()
+    .sort((a, b) => a.shortcut.localeCompare(b.shortcut))
+    .forEach((reply) => {
+      const row = document.createElement("div");
+      row.className = "quick-reply-row";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.innerHTML = `<strong>/${escapeHtml(reply.shortcut)}</strong><span>${escapeHtml(reply.content)}</span>`;
+      const actions = document.createElement("div");
+      actions.className = "actions";
+
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "ghost";
+      editButton.textContent = "Editar";
+      editButton.addEventListener("click", () => {
+        if (quickReplyShortcutInput) quickReplyShortcutInput.value = reply.shortcut;
+        if (quickReplyContentInput) quickReplyContentInput.value = reply.content;
+        if (quickReplyErrorEl) quickReplyErrorEl.textContent = "";
+        quickReplyShortcutInput?.focus();
+      });
+
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "ghost";
+      deleteButton.textContent = "Remover";
+      deleteButton.addEventListener("click", () => {
+        const confirmDelete = confirm(`Remover /${reply.shortcut}?`);
+        if (!confirmDelete) return;
+        const next = loadQuickReplies().filter((r) => r.shortcut !== reply.shortcut);
+        saveQuickReplies(next);
+        renderQuickRepliesManager();
+      });
+
+      actions.append(editButton, deleteButton);
+      row.append(meta, actions);
+      quickReplyListEl.appendChild(row);
+    });
+}
+
+function clearQuickReplyForm() {
+  if (quickReplyShortcutInput) quickReplyShortcutInput.value = "";
+  if (quickReplyContentInput) quickReplyContentInput.value = "";
+  if (quickReplyErrorEl) quickReplyErrorEl.textContent = "";
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function getSlashQueryAtCursor() {
+  if (!messageInput) return null;
+  const value = messageInput.value || "";
+  const cursor = messageInput.selectionStart ?? value.length;
+  let start = cursor;
+  while (start > 0 && !/\s/.test(value[start - 1])) {
+    start -= 1;
+  }
+  const token = value.slice(start, cursor);
+  if (!token.startsWith("/")) return null;
+  const query = token.slice(1).toLowerCase();
+  return { start, cursor, query };
+}
+
+function closeQuickReplyPanel() {
+  if (!quickReplyPanel) return;
+  quickReplyPanel.classList.add("hidden");
+  state.quickReplyOpen = false;
+  state.quickReplyIndex = 0;
+  state.quickReplyMatches = [];
+}
+
+function openQuickReplyPanel(matches) {
+  if (!quickReplyPanel) return;
+  quickReplyPanel.innerHTML = "";
+  state.quickReplyMatches = matches;
+  state.quickReplyOpen = true;
+  state.quickReplyIndex = Math.min(state.quickReplyIndex, Math.max(matches.length - 1, 0));
+
+  matches.forEach((reply, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "quick-reply-item";
+    if (index === state.quickReplyIndex) {
+      button.classList.add("active");
+    }
+    button.setAttribute("role", "option");
+    button.innerHTML = `<strong>/${escapeHtml(reply.shortcut)}</strong><span>${escapeHtml(reply.content)}</span>`;
+    button.addEventListener("click", () => applyQuickReplyAtCursor(index));
+    quickReplyPanel.appendChild(button);
+  });
+
+  quickReplyPanel.classList.remove("hidden");
+}
+
+function updateQuickReplyPanel() {
+  if (!quickReplyPanel || !messageInput || messageInput.disabled) return;
+  const slash = getSlashQueryAtCursor();
+  if (!slash) {
+    closeQuickReplyPanel();
+    return;
+  }
+  const replies = loadQuickReplies();
+  if (!replies.length) {
+    closeQuickReplyPanel();
+    return;
+  }
+  const query = slash.query;
+  const matches = replies
+    .filter((r) => (query ? r.shortcut.startsWith(query) : true))
+    .slice(0, 8);
+  if (!matches.length) {
+    closeQuickReplyPanel();
+    return;
+  }
+  openQuickReplyPanel(matches);
+}
+
+function applyQuickReplyAtCursor(index) {
+  if (!messageInput) return;
+  const slash = getSlashQueryAtCursor();
+  if (!slash) return;
+  const matches = state.quickReplyMatches || [];
+  const selected = matches[index];
+  if (!selected) return;
+
+  const value = messageInput.value || "";
+  const before = value.slice(0, slash.start);
+  const after = value.slice(slash.cursor);
+  const needsSpace = after.length && !/^\s/.test(after);
+  const insertion = selected.content + (needsSpace ? " " : "");
+  const nextValue = before + insertion + after;
+  const nextCursor = (before + insertion).length;
+  messageInput.value = nextValue;
+  messageInput.selectionStart = messageInput.selectionEnd = nextCursor;
+  messageInput.focus();
+  closeQuickReplyPanel();
+  scheduleMessageInputResize();
+}
 
 
 
@@ -963,6 +1169,7 @@ function setMessageFormAvailability(enabled) {
     messageInput.value = "";
     cancelPendingAudio();
     clearReplyContext();
+    closeQuickReplyPanel();
   }
   setAudioControlsAvailability(enabled);
   setAttachmentControlsAvailability(enabled);
@@ -3753,6 +3960,7 @@ if (messageForm) {
 
   messageInput.value = "";
   scheduleMessageInputResize();
+  closeQuickReplyPanel();
 
   try {
 
@@ -3804,12 +4012,38 @@ if (messageInput && messageForm) {
 
   messageInput.addEventListener("input", () => {
     scheduleMessageInputResize();
+    updateQuickReplyPanel();
   });
 
   // Set the initial height once styles are applied.
   scheduleMessageInputResize();
 
   messageInput.addEventListener("keydown", (event) => {
+
+    if (state.quickReplyOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        state.quickReplyIndex = Math.min(state.quickReplyIndex + 1, state.quickReplyMatches.length - 1);
+        openQuickReplyPanel(state.quickReplyMatches);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        state.quickReplyIndex = Math.max(state.quickReplyIndex - 1, 0);
+        openQuickReplyPanel(state.quickReplyMatches);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeQuickReplyPanel();
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        applyQuickReplyAtCursor(state.quickReplyIndex);
+        return;
+      }
+    }
 
     if (
 
@@ -4910,7 +5144,9 @@ function openSettings() {
   renderUsers();
 
   loadUsers();
+  renderQuickRepliesManager();
 
+  showSettingsHome();
   settingsModal.classList.remove("hidden");
 
   settingsModal.setAttribute("aria-hidden", "false");
@@ -4931,9 +5167,35 @@ function closeSettings() {
 
 }
 
+function hideAllSettingsSections() {
+  settingsSections.forEach((section) => section.classList.add("hidden"));
+}
+
+function showSettingsHome() {
+  hideAllSettingsSections();
+  if (settingsHomeEl) settingsHomeEl.classList.remove("hidden");
+  if (settingsBackButton) settingsBackButton.classList.add("hidden");
+
+  const isAdmin = Boolean(state.user?.is_admin);
+  settingsNavItems.forEach((item) => {
+    if (!(item instanceof HTMLElement)) return;
+    const adminOnly = item.hasAttribute("data-admin-only");
+    item.classList.toggle("hidden", adminOnly && !isAdmin);
+  });
+}
+
+function showSettingsSection(sectionId) {
+  hideAllSettingsSections();
+  if (settingsHomeEl) settingsHomeEl.classList.add("hidden");
+  const section = document.getElementById(sectionId);
+  if (section) section.classList.remove("hidden");
+  if (settingsBackButton) settingsBackButton.classList.remove("hidden");
+}
+
 
 
 closeSettingsBtn.addEventListener("click", closeSettings);
+settingsBackButton?.addEventListener("click", () => showSettingsHome());
 
 settingsModal.addEventListener("click", (event) => {
 
@@ -4942,6 +5204,84 @@ settingsModal.addEventListener("click", (event) => {
     closeSettings();
 
   }
+
+});
+
+settingsNavItems.forEach((item) => {
+  item.addEventListener("click", () => {
+    const targetId = item.getAttribute("data-settings-target");
+    if (!targetId) return;
+    if (item.hasAttribute("data-admin-only") && !state.user?.is_admin) return;
+    showSettingsSection(targetId);
+  });
+});
+
+if (quickReplyForm) {
+
+  quickReplyForm.addEventListener("submit", (event) => {
+
+    event.preventDefault();
+
+    const shortcut = (quickReplyShortcutInput?.value || "").trim().toLowerCase();
+
+    const content = (quickReplyContentInput?.value || "").trim();
+
+    if (!shortcut || !content) {
+
+      if (quickReplyErrorEl) quickReplyErrorEl.textContent = "Preencha o atalho e a mensagem.";
+
+      return;
+
+    }
+
+    if (!/^[a-z0-9._-]+$/.test(shortcut)) {
+
+      if (quickReplyErrorEl) quickReplyErrorEl.textContent =
+        "Atalho inválido. Use letras minúsculas, números, '.', '_' ou '-'.";
+
+      return;
+
+    }
+
+    const replies = loadQuickReplies();
+
+    const existingIndex = replies.findIndex((r) => r.shortcut === shortcut);
+
+    if (existingIndex >= 0) {
+
+      replies[existingIndex] = { shortcut, content };
+
+    } else {
+
+      replies.push({ shortcut, content });
+
+    }
+
+    saveQuickReplies(replies);
+
+    renderQuickRepliesManager();
+
+    clearQuickReplyForm();
+
+  });
+
+}
+
+quickReplyClearButton?.addEventListener("click", () => clearQuickReplyForm());
+
+document.addEventListener("click", (event) => {
+
+  if (!state.quickReplyOpen || !quickReplyPanel) return;
+
+  const target = event.target;
+
+  if (!(target instanceof Element)) return;
+
+  if (quickReplyPanel.contains(target)) return;
+
+  if (messageInput && (target === messageInput || messageInput.contains(target))) return;
+
+  closeQuickReplyPanel();
 
 });
 
