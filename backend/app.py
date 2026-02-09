@@ -52,6 +52,7 @@ from models import (
     ConversationNoteCreate,
     ConversationNoteRead,
     ConversationCreate,
+    ConversationUpdate,
     ConversationRead,
     ConversationSummary,
     DeviceSession,
@@ -1844,6 +1845,30 @@ def get_conversation(
         avatar_url = build_public_media_url(avatar_entry.media_path, request)
     conversation_read.avatar_url = avatar_url
     conversation_read.avatar_updated_at = avatar_updated_at
+    return conversation_read
+
+
+@app.patch("/api/conversations/{conversation_id}", response_model=ConversationRead)
+def update_conversation(
+    conversation_id: int,
+    payload: ConversationUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ConversationRead:
+    conversation = session.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversa nao encontrada")
+    ensure_conversation_access(conversation, current_user)
+    update_data = payload.model_dump(exclude_unset=True)
+    if "debtor_name" in update_data:
+        new_name = (update_data["debtor_name"] or "").strip()
+        conversation.debtor_name = new_name or (conversation.debtor_phone or "")
+    conversation.updated_at = datetime.utcnow()
+    session.add(conversation)
+    session.commit()
+    session.refresh(conversation)
+    conversation_read = ConversationRead.model_validate(conversation)
+    conversation_read.tags = visible_tags_for_user(conversation.tags, current_user)
     return conversation_read
 
 

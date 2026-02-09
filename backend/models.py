@@ -126,6 +126,10 @@ class ConversationCreate(ConversationBase):
     pass
 
 
+class ConversationUpdate(SQLModel):
+    debtor_name: Optional[str] = None
+
+
 class ConversationRead(ConversationBase):
     id: int
     organization_id: int
@@ -515,6 +519,7 @@ __all__ = [
     "OrganizationRead",
     "Conversation",
     "ConversationCreate",
+    "ConversationUpdate",
     "ConversationRead",
     "ConversationSummary",
     "ConversationAvatar",

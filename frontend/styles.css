@@ -3964,6 +3964,25 @@ select:focus {
 
 }
 
+.edit-contact-name {
+  width: auto;
+  height: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: rgba(15, 23, 42, 0.65);
+  padding: 0.15rem 0.25rem;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.edit-contact-name:hover {
+  color: var(--primary);
+  background: rgba(33, 17, 129, 0.08);
+}
+
 
 
 .selected-tags-inline {
@@ -4143,6 +4162,71 @@ select:focus {
   line-height: 1.4;
   position: relative;
   white-space: pre-wrap;
+}
+
+.phone-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.85);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  white-space: pre-wrap;
+}
+
+.message.debtor .phone-link {
+  text-decoration-color: rgba(33, 17, 129, 0.55);
+}
+
+.phone-action-menu {
+  position: fixed;
+  z-index: 120;
+  min-width: 240px;
+  max-width: min(320px, 92vw);
+  border-radius: 16px;
+  background: #111827;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 24px 55px rgba(15, 23, 42, 0.45);
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.phone-action-menu.hidden {
+  display: none;
+}
+
+.phone-action-menu button {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba(248, 250, 252, 0.95);
+  border-radius: 14px;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-weight: 600;
+}
+
+.phone-action-menu button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.phone-action-menu button .icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  flex: 0 0 auto;
 }
 
 .conversation-note {

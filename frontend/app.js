@@ -160,11 +160,18 @@ const quickReplyContentInput = document.getElementById("quickReplyContent");
 const quickReplyClearButton = document.getElementById("quickReplyClear");
 const quickReplyErrorEl = document.getElementById("quickReplyError");
 
+const phoneActionMenu = document.createElement("div");
+phoneActionMenu.className = "phone-action-menu hidden";
+phoneActionMenu.setAttribute("role", "menu");
+document.body.appendChild(phoneActionMenu);
+
 const chatTitleEl = document.getElementById("chatTitle");
 
 const chatSubtitleEl = document.getElementById("chatSubtitle");
 
 const chatOwnerEl = document.getElementById("chatOwner");
+
+const editContactNameButton = document.getElementById("editContactNameButton");
 
 const selectedTagsEl = document.getElementById("selectedTags");
 
@@ -592,6 +599,154 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function normalizePhoneDigits(value) {
+  return String(value || "").replaceAll(/\D/g, "");
+}
+
+function normalizePhoneForCompare(value) {
+  const digits = normalizePhoneDigits(value);
+  if (!digits) return "";
+  if (digits.length > 11) {
+    return digits.slice(-11);
+  }
+  return digits;
+}
+
+function digitsToE164(digits) {
+  const only = normalizePhoneDigits(digits);
+  if (!only) return "";
+  if (only.length === 10 || only.length === 11) {
+    return `+55${only}`;
+  }
+  if ((only.length === 12 || only.length === 13) && only.startsWith("55")) {
+    return `+${only}`;
+  }
+  return only.startsWith("+") ? only : `+${only}`;
+}
+
+function extractPhoneMatches(text) {
+  const value = String(text || "");
+  // Match per-line phone-like tokens (avoid swallowing multiple lines in one match).
+  // Examples: "47 9733-7214", "+55 (47) 9709-3208", "47997832789"
+  const regex = /(\+?\d[\d ().-]{7,}\d)/g;
+  const matches = [];
+  let match;
+  while ((match = regex.exec(value))) {
+    const raw = match[1];
+    const digits = normalizePhoneDigits(raw);
+    if (!digits) continue;
+    if (digits.length < 10 || digits.length > 13) continue;
+    // Avoid matching dates like 09/02/2026 or times like 13:31
+    if (raw.includes("/") || raw.includes(":")) continue;
+    matches.push({ start: match.index, end: match.index + raw.length, raw, digits });
+  }
+  return matches;
+}
+
+function hidePhoneActionMenu() {
+  phoneActionMenu.classList.add("hidden");
+  phoneActionMenu.innerHTML = "";
+}
+
+function showPhoneActionMenu({ x, y, phoneDigits }) {
+  phoneActionMenu.innerHTML = "";
+  const e164 = digitsToE164(phoneDigits);
+
+  const talkButton = document.createElement("button");
+  talkButton.type = "button";
+  talkButton.innerHTML = `<span class="icon" aria-hidden="true">💬</span><span>Conversar com ${escapeHtml(
+    e164 || phoneDigits
+  )}</span>`;
+  talkButton.addEventListener("click", async () => {
+    hidePhoneActionMenu();
+    await openConversationForPhone(phoneDigits);
+  });
+
+  const copyButton = document.createElement("button");
+  copyButton.type = "button";
+  copyButton.innerHTML = `<span class="icon" aria-hidden="true">📋</span><span>Copiar número</span>`;
+  copyButton.addEventListener("click", async () => {
+    hidePhoneActionMenu();
+    try {
+      await navigator.clipboard.writeText(e164 || phoneDigits);
+    } catch {
+      // ignore
+    }
+  });
+
+  phoneActionMenu.append(talkButton, copyButton);
+  phoneActionMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - 340))}px`;
+  phoneActionMenu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - 180))}px`;
+  phoneActionMenu.classList.remove("hidden");
+}
+
+async function openConversationForPhone(phoneDigits) {
+  const target = normalizePhoneForCompare(phoneDigits);
+  if (!target) return;
+
+  const existing = (state.conversations || []).find((conversation) => {
+    const current = normalizePhoneForCompare(conversation.debtor_phone);
+    return current && current === target;
+  });
+  if (existing) {
+    selectConversation(existing.id);
+    return;
+  }
+
+  const confirmCreate = confirm(`Criar nova conversa com ${digitsToE164(phoneDigits) || phoneDigits}?`);
+  if (!confirmCreate) return;
+  const payload = {
+    debtor_name: digitsToE164(phoneDigits) || phoneDigits,
+    debtor_phone: digitsToE164(phoneDigits) || phoneDigits,
+    notes: null,
+  };
+  try {
+    const conversation = await fetchJson("/api/conversations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    await loadConversations();
+    selectConversation(conversation.id);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+function appendMessageTextWithLinks(container, text) {
+  const value = String(text || "");
+  const matches = extractPhoneMatches(value);
+  if (!matches.length) {
+    container.textContent = value;
+    return;
+  }
+
+  let cursor = 0;
+  matches.forEach((m) => {
+    if (m.start > cursor) {
+      container.appendChild(document.createTextNode(value.slice(cursor, m.start)));
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "phone-link";
+    button.textContent = m.raw;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const rect = button.getBoundingClientRect();
+      showPhoneActionMenu({
+        x: rect.left + rect.width / 2,
+        y: rect.top - 8,
+        phoneDigits: m.digits,
+      });
+    });
+    container.appendChild(button);
+    cursor = m.end;
+  });
+
+  if (cursor < value.length) {
+    container.appendChild(document.createTextNode(value.slice(cursor)));
+  }
 }
 
 function getSlashQueryAtCursor() {
@@ -3185,7 +3340,7 @@ function renderMessages(messages, options = {}) {
 
       const textEl = document.createElement("p");
 
-      textEl.textContent = message.content || "";
+      appendMessageTextWithLinks(textEl, message.content || "");
 
       bubble.appendChild(textEl);
 
@@ -3636,6 +3791,7 @@ function renderChatHeader() {
     }
 
     updateCallButtonsAvailability();
+    editContactNameButton?.classList.add("hidden");
 
     return;
 
@@ -3646,6 +3802,7 @@ function renderChatHeader() {
   const displayName = (conversation.debtor_name || conversation.debtor_phone || "Sem identificação").trim();
 
   chatTitleEl.textContent = displayName;
+  editContactNameButton?.classList.remove("hidden");
 
   const phone = (conversation.debtor_phone || "").trim();
 
@@ -4126,6 +4283,29 @@ newConversationForm.addEventListener("submit", async (event) => {
 
 
 refreshButton.addEventListener("click", () => loadConversations());
+
+editContactNameButton?.addEventListener("click", async () => {
+  if (!state.selectedConversation) return;
+  const conversationId = state.selectedConversation.id;
+  const currentName = (state.selectedConversation.debtor_name || "").trim();
+  const currentPhone = (state.selectedConversation.debtor_phone || "").trim();
+  const nextName = prompt(
+    "Nome do contato (deixe em branco para voltar a mostrar só o número):",
+    currentName && currentName !== currentPhone ? currentName : ""
+  );
+  if (nextName === null) return;
+  try {
+    const updated = await fetchJson(`/api/conversations/${conversationId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ debtor_name: nextName }),
+    });
+    state.selectedConversation = updated;
+    await loadConversations({ silent: true });
+    renderChatHeader();
+  } catch (error) {
+    alert(error.message);
+  }
+});
 
 
 
@@ -5283,6 +5463,18 @@ document.addEventListener("click", (event) => {
 
   closeQuickReplyPanel();
 
+});
+
+document.addEventListener("click", (event) => {
+  if (phoneActionMenu.classList.contains("hidden")) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (phoneActionMenu.contains(target)) return;
+  hidePhoneActionMenu();
+});
+
+window.addEventListener("resize", () => {
+  hidePhoneActionMenu();
 });
 
 
