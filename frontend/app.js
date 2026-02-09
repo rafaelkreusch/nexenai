@@ -347,6 +347,28 @@ const imagePreviewImage = document.getElementById("imagePreviewImage");
 const imagePreviewCaption = document.getElementById("imagePreviewCaption");
 const imagePreviewDownload = document.getElementById("imagePreviewDownload");
 
+const MIC_ICON_SVG = "<svg class='toolbar-icon' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' focusable='false'><path d='M12 19v3'/><path d='M19 10v2a7 7 0 0 1-14 0v-2'/><rect x='9' y='2' width='6' height='13' rx='3'/></svg>";
+const STOP_ICON_SVG = "<svg class='toolbar-icon' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' focusable='false'><rect x='7' y='7' width='10' height='10' rx='2'/></svg>";
+
+function setAudioRecordButtonVisual(mode) {
+  if (!audioRecordButton) return;
+
+  if (mode === "recording") {
+    audioRecordButton.classList.add("recording");
+    audioRecordButton.classList.add("icon-only");
+    audioRecordButton.innerHTML = STOP_ICON_SVG;
+    audioRecordButton.setAttribute("aria-label", "Parar gravação");
+    audioRecordButton.title = "Parar";
+    return;
+  }
+
+  audioRecordButton.classList.remove("recording");
+  audioRecordButton.classList.add("icon-only");
+  audioRecordButton.innerHTML = MIC_ICON_SVG;
+  audioRecordButton.setAttribute("aria-label", "Gravar áudio");
+  audioRecordButton.title = "Gravar áudio";
+}
+
 
 const STORAGE_KEY = "chatdevalor_token";
 
@@ -2103,13 +2125,7 @@ async function startRecording() {
 
     recorder.start();
 
-    if (audioRecordButton) {
-
-      audioRecordButton.classList.add("recording");
-
-      audioRecordButton.innerHTML = "<span aria-hidden='true'>■</span><span>Parar</span>";
-
-    }
+    setAudioRecordButtonVisual("recording");
 
     showAudioStatus("00:00");
 
@@ -2153,13 +2169,7 @@ function stopRecording(cancel = false) {
 
   }
 
-  if (audioRecordButton) {
-
-    audioRecordButton.classList.remove("recording");
-
-    audioRecordButton.innerHTML = "<span aria-hidden='true'>🎙️</span><span>Gravar áudio</span>";
-
-  }
+  setAudioRecordButtonVisual("idle");
 
   if (state.audio.timer) {
 
