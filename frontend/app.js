@@ -98,6 +98,17 @@ const settingsUserEl = document.getElementById("settingsUser");
 
 const settingsOrgEl = document.getElementById("settingsOrg");
 
+const departmentCreateForm = document.getElementById("departmentCreateForm");
+const departmentCreateNameInput = document.getElementById("departmentCreateName");
+const departmentCreateErrorEl = document.getElementById("departmentCreateError");
+const departmentListEl = document.getElementById("departmentList");
+const departmentDetailEl = document.getElementById("departmentDetail");
+const departmentDetailTitleEl = document.getElementById("departmentDetailTitle");
+const departmentUsersListEl = document.getElementById("departmentUsersList");
+const departmentSaveUsersButton = document.getElementById("departmentSaveUsersButton");
+const departmentSaveErrorEl = document.getElementById("departmentSaveError");
+const departmentDeleteButton = document.getElementById("departmentDeleteButton");
+
 const userInfoEl = document.getElementById("userInfo");
 const userMenuButton = document.getElementById("userMenuButton");
 const userMenuPanel = document.getElementById("userMenuPanel");
@@ -196,6 +207,12 @@ const phoneActionMenu = document.createElement("div");
 phoneActionMenu.className = "phone-action-menu hidden";
 phoneActionMenu.setAttribute("role", "menu");
 document.body.appendChild(phoneActionMenu);
+
+const conversationActionMenu = document.createElement("div");
+conversationActionMenu.className = "conversation-action-menu hidden";
+conversationActionMenu.setAttribute("role", "menu");
+document.body.appendChild(conversationActionMenu);
+let conversationActionMenuConversationId = null;
 
 const chatTitleEl = document.getElementById("chatTitle");
 
@@ -453,6 +470,10 @@ const state = {
   conversations: [],
 
   users: [],
+
+  departments: [],
+  selectedDepartmentId: null,
+  selectedDepartmentUserIds: [],
 
   selectedConversation: null,
 
@@ -718,6 +739,93 @@ function extractPhoneMatches(text) {
 function hidePhoneActionMenu() {
   phoneActionMenu.classList.add("hidden");
   phoneActionMenu.innerHTML = "";
+}
+
+function hideConversationActionMenu() {
+  conversationActionMenu.classList.add("hidden");
+  conversationActionMenu.innerHTML = "";
+  conversationActionMenuConversationId = null;
+}
+
+function sortConversationsForSidebar(list) {
+  const copy = Array.isArray(list) ? [...list] : [];
+  copy.sort((a, b) => {
+    const ap = a?.is_pinned ? 1 : 0;
+    const bp = b?.is_pinned ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    const at = a?.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+    const bt = b?.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+    if (at !== bt) return bt - at;
+    return (b?.id || 0) - (a?.id || 0);
+  });
+  return copy;
+}
+
+async function setConversationPinned(conversationId, pinned) {
+  await fetchJson(`/api/conversations/${conversationId}/pin`, {
+    method: pinned ? "POST" : "DELETE",
+  });
+  const target = (state.conversations || []).find((c) => c.id === conversationId);
+  if (target) {
+    target.is_pinned = Boolean(pinned);
+  }
+  state.conversations = sortConversationsForSidebar(state.conversations || []);
+  renderConversations();
+}
+
+function showConversationActionMenu({ x, y, conversation }) {
+  if (!conversation) return;
+  const conversationId = conversation.id;
+  conversationActionMenuConversationId = conversationId;
+  conversationActionMenu.innerHTML = "";
+
+  const isPinned = Boolean(conversation.is_pinned);
+
+  const pinButton = document.createElement("button");
+  pinButton.type = "button";
+  pinButton.textContent = isPinned ? "Desafixar conversa" : "Fixar conversa";
+  pinButton.addEventListener("click", async () => {
+    hideConversationActionMenu();
+    try {
+      await setConversationPinned(conversationId, !isPinned);
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  const tagButton = document.createElement("button");
+  tagButton.type = "button";
+  tagButton.textContent = "Adicionar etiqueta";
+  tagButton.addEventListener("click", () => {
+    hideConversationActionMenu();
+    selectConversation(conversationId);
+    window.setTimeout(() => {
+      if (tagMenuToggle && !tagMenuToggle.disabled) {
+        tagMenuToggle.click();
+      }
+    }, 0);
+  });
+
+  const unreadButton = document.createElement("button");
+  unreadButton.type = "button";
+  unreadButton.textContent = "Marcar como não lida";
+  unreadButton.addEventListener("click", async () => {
+    hideConversationActionMenu();
+    try {
+      await fetchJson(`/api/conversations/${conversationId}/mark-unread`, {
+        method: "POST",
+      });
+      await loadConversations({ silent: true });
+      renderConversations();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  conversationActionMenu.append(pinButton, tagButton, unreadButton);
+  conversationActionMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - 340))}px`;
+  conversationActionMenu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - 220))}px`;
+  conversationActionMenu.classList.remove("hidden");
 }
 
 function showPhoneActionMenu({ x, y, phoneDigits }) {
@@ -2478,13 +2586,34 @@ async function fetchJson(url, options = {}) {
 
   if (!response.ok) {
 
-    const detail = await response.json().catch(() => ({}));
+    const raw = await response.text().catch(() => "");
+    let detail = {};
+    if (raw) {
+      try {
+        detail = JSON.parse(raw);
+      } catch {
+        detail = { detail: raw };
+      }
+    }
 
     throw new Error(detail.detail || `Falha na requisição ${response.status}`);
 
   }
 
-  return response.json();
+  if (response.status === 204) {
+    return null;
+  }
+
+  const raw = await response.text().catch(() => "");
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
 
 }
 
@@ -2992,7 +3121,41 @@ function renderConversations(conversations = state.conversations) {
 
 
 
+    const actionsToggle = document.createElement("button");
+    actionsToggle.type = "button";
+    actionsToggle.className = "conversation-actions-toggle";
+    actionsToggle.title = "Opções";
+    actionsToggle.setAttribute("aria-label", "Opções");
+    actionsToggle.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>`;
+    actionsToggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = actionsToggle.getBoundingClientRect();
+      const willOpen =
+        conversationActionMenuConversationId !== conversation.id ||
+        conversationActionMenu.classList.contains("hidden");
+      hideConversationActionMenu();
+      if (willOpen) {
+        showConversationActionMenu({
+          x: rect.left,
+          y: rect.bottom + 8,
+          conversation,
+        });
+      }
+    });
+
+    head.append(actionsToggle);
+
     item.append(head);
+
+    if (conversation.is_pinned) {
+      const pinIndicator = document.createElement("div");
+      pinIndicator.className = "conversation-pinned-indicator";
+      pinIndicator.title = "Conversa fixada";
+      pinIndicator.setAttribute("aria-label", "Conversa fixada");
+      pinIndicator.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>`;
+      item.appendChild(pinIndicator);
+    }
 
     if (conversation.tags?.length) {
 
@@ -3025,8 +3188,11 @@ function renderConversations(conversations = state.conversations) {
       ownerTag.className = "owner-label";
 
       const ownerName = getUserLabel(conversation.owner_user_id);
+      const ownerDept = getUserDepartmentLabel(conversation.owner_user_id);
 
-      ownerTag.textContent = ownerName ? `@${ownerName}` : `ID ${conversation.owner_user_id}`;
+      ownerTag.textContent = ownerName
+        ? `@${ownerName}${ownerDept ? ` / ${ownerDept}` : ""}`
+        : `ID ${conversation.owner_user_id}`;
 
       ownerTag.title = "Responsável";
 
@@ -3102,7 +3268,7 @@ async function loadConversations(options = {}) {
 
     }
 
-    state.conversations = await fetchJson(url);
+    state.conversations = sortConversationsForSidebar(await fetchJson(url));
 
     seedConversationAvatars(state.conversations);
 
@@ -3883,10 +4049,11 @@ function renderChatHeader() {
   if (state.user?.is_admin && conversation.owner_user_id) {
 
     const ownerName = getUserLabel(conversation.owner_user_id);
+    const ownerDept = getUserDepartmentLabel(conversation.owner_user_id);
 
     ownerText = ownerName
 
-      ? `Responsável: @${ownerName}`
+      ? `Responsável: @${ownerName}${ownerDept ? ` / ${ownerDept}` : ""}`
 
       : `Responsável ID ${conversation.owner_user_id}`;
 
@@ -4747,6 +4914,7 @@ document.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeTagMenus();
+    hideConversationActionMenu();
     if (reminderModal && !reminderModal.classList.contains("hidden")) {
       closeReminderModal(true);
     }
@@ -5464,7 +5632,10 @@ function openSettings() {
 
   renderUsers();
 
-  loadUsers();
+  loadUsers().then(() => {
+    loadDepartments({ silent: true });
+  });
+  loadDepartments({ silent: true });
   renderQuickRepliesManager();
 
   showSettingsHome();
@@ -5511,6 +5682,10 @@ function showSettingsSection(sectionId) {
   const section = document.getElementById(sectionId);
   if (section) section.classList.remove("hidden");
   if (settingsBackButton) settingsBackButton.classList.remove("hidden");
+
+  if (sectionId === "settingsDepartmentsSection") {
+    loadDepartments();
+  }
 }
 
 
@@ -5614,8 +5789,20 @@ document.addEventListener("click", (event) => {
   hidePhoneActionMenu();
 });
 
+document.addEventListener("click", (event) => {
+  if (conversationActionMenu.classList.contains("hidden")) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (conversationActionMenu.contains(target)) return;
+  hideConversationActionMenu();
+});
+
 window.addEventListener("resize", () => {
   hidePhoneActionMenu();
+});
+
+window.addEventListener("resize", () => {
+  hideConversationActionMenu();
 });
 
 
@@ -7750,6 +7937,14 @@ function getUserLabel(userId) {
 
 }
 
+function getUserDepartmentLabel(userId) {
+  if (!userId) return "";
+  const user = state.users.find((u) => u.id === userId);
+  if (!user) return "";
+  const departments = Array.isArray(user.departments) ? user.departments : [];
+  return departments.length ? String(departments[0]) : "";
+}
+
 
 
 function getConversationLabel(conversationId) {
@@ -7971,6 +8166,179 @@ async function loadUsers() {
   }
 
 }
+
+function resetDepartmentDetail() {
+  state.selectedDepartmentId = null;
+  state.selectedDepartmentUserIds = [];
+  if (departmentDetailEl) departmentDetailEl.classList.add("hidden");
+  if (departmentDetailTitleEl) departmentDetailTitleEl.textContent = "";
+  if (departmentUsersListEl) departmentUsersListEl.innerHTML = "";
+  if (departmentSaveErrorEl) departmentSaveErrorEl.textContent = "";
+}
+
+function renderDepartments() {
+  if (!departmentListEl) return;
+
+  departmentListEl.innerHTML = "";
+  if (!state.user?.is_admin) {
+    departmentListEl.innerHTML = "<p class=\"empty\">Somente administradores podem gerenciar departamentos.</p>";
+    resetDepartmentDetail();
+    return;
+  }
+
+  const list = state.departments || [];
+  if (!list.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "Nenhum departamento cadastrado.";
+    departmentListEl.appendChild(empty);
+    resetDepartmentDetail();
+    return;
+  }
+
+  list.forEach((dept) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "department-item";
+    btn.classList.toggle("active", state.selectedDepartmentId === dept.id);
+    btn.innerHTML = `<div class="department-item-name">${escapeHtml(dept.name || "")}</div>
+      <div class="department-item-meta">${Number(dept.member_count) || 0} usuário(s)</div>`;
+    btn.addEventListener("click", () => selectDepartment(dept.id));
+    departmentListEl.appendChild(btn);
+  });
+}
+
+async function loadDepartments(options = {}) {
+  const { silent = false } = options;
+  if (!state.user?.is_admin) {
+    state.departments = [];
+    renderDepartments();
+    return;
+  }
+  try {
+    state.departments = await fetchJson("/api/departments");
+    renderDepartments();
+  } catch (error) {
+    console.error("Erro ao carregar departamentos", error);
+    if (!silent && settingsModal.getAttribute("aria-hidden") === "false") {
+      alert("Não foi possível carregar os departamentos.");
+    }
+  }
+}
+
+async function selectDepartment(departmentId) {
+  if (!departmentId) return;
+  state.selectedDepartmentId = departmentId;
+  if (departmentSaveErrorEl) departmentSaveErrorEl.textContent = "";
+
+  const dept = (state.departments || []).find((d) => d.id === departmentId);
+  if (departmentDetailTitleEl) departmentDetailTitleEl.textContent = dept ? dept.name : `Departamento #${departmentId}`;
+
+  if (departmentDetailEl) departmentDetailEl.classList.remove("hidden");
+  if (departmentUsersListEl) departmentUsersListEl.innerHTML = "<p class=\"muted small\">Carregando usuários...</p>";
+
+  try {
+    const userIds = await fetchJson(`/api/departments/${departmentId}/users`);
+    state.selectedDepartmentUserIds = Array.isArray(userIds) ? userIds.map((v) => Number(v)) : [];
+  } catch (error) {
+    state.selectedDepartmentUserIds = [];
+    if (departmentSaveErrorEl) departmentSaveErrorEl.textContent = error.message;
+  }
+
+  renderDepartments();
+  renderDepartmentUsersChecklist();
+}
+
+function renderDepartmentUsersChecklist() {
+  if (!departmentUsersListEl) return;
+  departmentUsersListEl.innerHTML = "";
+
+  const users = state.users || [];
+  if (!users.length) {
+    departmentUsersListEl.innerHTML = "<p class=\"empty\">Carregue a lista de usuários para atribuir ao departamento.</p>";
+    return;
+  }
+
+  const selectedSet = new Set(state.selectedDepartmentUserIds || []);
+  users.forEach((user) => {
+    const row = document.createElement("label");
+    row.className = "department-user-row";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedSet.has(user.id);
+    checkbox.addEventListener("change", () => {
+      const set = new Set(state.selectedDepartmentUserIds || []);
+      if (checkbox.checked) set.add(user.id);
+      else set.delete(user.id);
+      state.selectedDepartmentUserIds = Array.from(set);
+    });
+
+    const name = document.createElement("span");
+    name.className = "department-user-name";
+    name.textContent = user.full_name ? `${user.full_name} (@${user.username})` : `@${user.username}`;
+    row.append(checkbox, name);
+    departmentUsersListEl.appendChild(row);
+  });
+}
+
+departmentCreateForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!state.user?.is_admin) return;
+  if (departmentCreateErrorEl) departmentCreateErrorEl.textContent = "";
+  const name = (departmentCreateNameInput?.value || "").trim();
+  if (!name) {
+    if (departmentCreateErrorEl) departmentCreateErrorEl.textContent = "Informe o nome do departamento.";
+    return;
+  }
+  try {
+    await fetchJson("/api/departments", { method: "POST", body: JSON.stringify({ name }) });
+    if (departmentCreateNameInput) departmentCreateNameInput.value = "";
+    await loadDepartments();
+  } catch (error) {
+    if (departmentCreateErrorEl) departmentCreateErrorEl.textContent = error.message;
+  }
+});
+
+departmentSaveUsersButton?.addEventListener("click", async () => {
+  if (!state.user?.is_admin) return;
+  const deptId = state.selectedDepartmentId;
+  if (!deptId) return;
+  if (departmentSaveErrorEl) departmentSaveErrorEl.textContent = "";
+  try {
+    await fetchJson(`/api/departments/${deptId}/users`, {
+      method: "PUT",
+      body: JSON.stringify({ user_ids: state.selectedDepartmentUserIds || [] }),
+    });
+    await loadDepartments({ silent: true });
+    if (departmentSaveErrorEl) {
+      departmentSaveErrorEl.textContent = "Salvo!";
+      departmentSaveErrorEl.classList.add("success");
+      window.setTimeout(() => {
+        departmentSaveErrorEl.textContent = "";
+        departmentSaveErrorEl.classList.remove("success");
+      }, 1400);
+    }
+  } catch (error) {
+    if (departmentSaveErrorEl) departmentSaveErrorEl.textContent = error.message;
+  }
+});
+
+departmentDeleteButton?.addEventListener("click", async () => {
+  if (!state.user?.is_admin) return;
+  const deptId = state.selectedDepartmentId;
+  if (!deptId) return;
+  const dept = (state.departments || []).find((d) => d.id === deptId);
+  const confirmDelete = confirm(`Excluir o departamento "${dept?.name || deptId}"?`);
+  if (!confirmDelete) return;
+  if (departmentSaveErrorEl) departmentSaveErrorEl.textContent = "";
+  try {
+    await fetchJson(`/api/departments/${deptId}`, { method: "DELETE" });
+    resetDepartmentDetail();
+    await loadDepartments();
+  } catch (error) {
+    if (departmentSaveErrorEl) departmentSaveErrorEl.textContent = error.message;
+  }
+});
 
 
 

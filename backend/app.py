@@ -48,6 +48,7 @@ from models import (
     AuthResponse,
     Conversation,
     ConversationAvatar,
+    ConversationPin,
     ConversationNote,
     ConversationNoteCreate,
     ConversationNoteRead,
@@ -77,6 +78,12 @@ from models import (
     UserCreate,
     UserRead,
     UserUpdate,
+    Department,
+    DepartmentCreate,
+    DepartmentUpdate,
+    DepartmentRead,
+    DepartmentUserLink,
+    DepartmentUsersUpdate,
     Tag,
     TagCreate,
     TagRead,
@@ -1750,6 +1757,29 @@ def list_conversations(
         query.order_by(Conversation.updated_at.desc())
     ).all()
     conversation_ids = [conversation.id for conversation in conversations]
+    pinned_ids: set[int] = set()
+    pinned_at_map: dict[int, datetime] = {}
+    if conversation_ids:
+        pinned_rows = session.exec(
+            select(ConversationPin).where(
+                ConversationPin.user_id == current_user.id,
+                ConversationPin.conversation_id.in_(conversation_ids),
+            )
+        ).all()
+        pinned_at_map = {
+            entry.conversation_id: entry.created_at
+            for entry in pinned_rows
+            if entry.conversation_id is not None
+        }
+        pinned_ids = set(pinned_at_map.keys())
+        conversations.sort(
+            key=lambda conversation: (
+                conversation.id in pinned_ids,
+                pinned_at_map.get(conversation.id, datetime.min),
+                conversation.updated_at,
+            ),
+            reverse=True,
+        )
     unread_counts: Dict[int, int] = {}
     if conversation_ids:
         unread_rows = session.exec(
@@ -1795,6 +1825,7 @@ def list_conversations(
                 owner_user_id=conversation.owner_user_id,
                 tags=tag_reads,
                 unread_count=unread_counts.get(conversation.id, 0),
+                is_pinned=conversation.id in pinned_ids,
                 avatar_url=avatar_url,
                 avatar_updated_at=avatar_updated_at,
             )
@@ -1870,6 +1901,72 @@ def update_conversation(
     conversation_read = ConversationRead.model_validate(conversation)
     conversation_read.tags = visible_tags_for_user(conversation.tags, current_user)
     return conversation_read
+
+
+@app.post("/api/conversations/{conversation_id}/pin", status_code=204)
+def pin_conversation(
+    conversation_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    conversation = session.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversa nao encontrada")
+    ensure_conversation_access(conversation, current_user)
+
+    existing = session.get(ConversationPin, (conversation_id, current_user.id))
+    if existing:
+        return
+
+    pin = ConversationPin(conversation_id=conversation_id, user_id=current_user.id)
+    session.add(pin)
+    session.commit()
+
+
+@app.delete("/api/conversations/{conversation_id}/pin", status_code=204)
+def unpin_conversation(
+    conversation_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    conversation = session.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversa nao encontrada")
+    ensure_conversation_access(conversation, current_user)
+
+    existing = session.get(ConversationPin, (conversation_id, current_user.id))
+    if not existing:
+        return
+
+    session.delete(existing)
+    session.commit()
+
+
+@app.post("/api/conversations/{conversation_id}/mark-unread", status_code=204)
+def mark_conversation_unread(
+    conversation_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    conversation = session.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversa nao encontrada")
+    ensure_conversation_access(conversation, current_user)
+
+    latest_debtor_message = session.exec(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .where(Message.direction == MessageDirection.debtor)
+        .order_by(Message.timestamp.desc())
+    ).first()
+    if not latest_debtor_message:
+        return
+    if latest_debtor_message.is_read is False:
+        return
+
+    latest_debtor_message.is_read = False
+    session.add(latest_debtor_message)
+    session.commit()
 
 
 @app.get("/api/conversations/{conversation_id}/messages", response_model=List[MessageRead])
@@ -3388,7 +3485,197 @@ def list_users(
         .where(User.organization_id == current_user.organization_id)
         .order_by(User.created_at.asc())
     ).all()
-    return [UserRead.model_validate(user) for user in users]
+    user_ids = [user.id for user in users if user.id]
+    dept_map: Dict[int, List[str]] = {}
+    if user_ids:
+        dept_rows = session.exec(
+            select(DepartmentUserLink.user_id, Department.name)
+            .where(DepartmentUserLink.user_id.in_(user_ids))
+            .where(DepartmentUserLink.department_id == Department.id)
+            .where(Department.organization_id == current_user.organization_id)
+        ).all()
+        for user_id, dept_name in dept_rows:
+            if not user_id or not dept_name:
+                continue
+            dept_map.setdefault(int(user_id), []).append(str(dept_name))
+        for user_id, names in dept_map.items():
+            dept_map[user_id] = sorted({n.strip() for n in names if n.strip()})
+
+    result: List[UserRead] = []
+    for user in users:
+        data = UserRead.model_validate(user)
+        data.departments = dept_map.get(user.id or 0, [])
+        result.append(data)
+    return result
+
+
+@app.get("/api/departments", response_model=List[DepartmentRead])
+def list_departments(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> List[DepartmentRead]:
+    require_admin(current_user)
+    departments = session.exec(
+        select(Department)
+        .where(Department.organization_id == current_user.organization_id)
+        .order_by(Department.created_at.asc())
+    ).all()
+    dept_ids = [dept.id for dept in departments if dept.id]
+    counts: Dict[int, int] = {}
+    if dept_ids:
+        rows = session.exec(
+            select(DepartmentUserLink.department_id, func.count(DepartmentUserLink.user_id))
+            .where(DepartmentUserLink.department_id.in_(dept_ids))
+            .group_by(DepartmentUserLink.department_id)
+        ).all()
+        counts = {dept_id: count for dept_id, count in rows if dept_id}
+    return [
+        DepartmentRead(
+            id=dept.id,
+            organization_id=dept.organization_id,
+            name=dept.name,
+            created_at=dept.created_at,
+            member_count=counts.get(dept.id or 0, 0),
+        )
+        for dept in departments
+        if dept.id is not None
+    ]
+
+
+@app.post("/api/departments", response_model=DepartmentRead, status_code=201)
+def create_department(
+    payload: DepartmentCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> DepartmentRead:
+    require_admin(current_user)
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Informe o nome do departamento.")
+    existing = session.exec(
+        select(Department).where(
+            Department.organization_id == current_user.organization_id,
+            func.lower(Department.name) == name.lower(),
+        )
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Departamento já existe.")
+
+    dept = Department(organization_id=current_user.organization_id, name=name)
+    session.add(dept)
+    session.commit()
+    session.refresh(dept)
+    return DepartmentRead(
+        id=dept.id,
+        organization_id=dept.organization_id,
+        name=dept.name,
+        created_at=dept.created_at,
+        member_count=0,
+    )
+
+
+@app.patch("/api/departments/{department_id}", response_model=DepartmentRead)
+def update_department(
+    department_id: int,
+    payload: DepartmentUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> DepartmentRead:
+    require_admin(current_user)
+    dept = session.get(Department, department_id)
+    if not dept or dept.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="Departamento não encontrado.")
+    update_data = payload.model_dump(exclude_unset=True)
+    if "name" in update_data:
+        name = (update_data["name"] or "").strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Informe o nome do departamento.")
+        existing = session.exec(
+            select(Department).where(
+                Department.organization_id == current_user.organization_id,
+                func.lower(Department.name) == name.lower(),
+                Department.id != department_id,
+            )
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Já existe um departamento com esse nome.")
+        dept.name = name
+    session.add(dept)
+    session.commit()
+    session.refresh(dept)
+    member_count = session.exec(
+        select(func.count(DepartmentUserLink.user_id)).where(
+            DepartmentUserLink.department_id == department_id
+        )
+    ).one()
+    return DepartmentRead(
+        id=dept.id,
+        organization_id=dept.organization_id,
+        name=dept.name,
+        created_at=dept.created_at,
+        member_count=int(member_count or 0),
+    )
+
+
+@app.delete("/api/departments/{department_id}", status_code=204)
+def delete_department(
+    department_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    require_admin(current_user)
+    dept = session.get(Department, department_id)
+    if not dept or dept.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="Departamento não encontrado.")
+    session.exec(delete(DepartmentUserLink).where(DepartmentUserLink.department_id == department_id))
+    session.delete(dept)
+    session.commit()
+
+
+@app.get("/api/departments/{department_id}/users", response_model=List[int])
+def list_department_users(
+    department_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> List[int]:
+    require_admin(current_user)
+    dept = session.get(Department, department_id)
+    if not dept or dept.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="Departamento não encontrado.")
+    rows = session.exec(
+        select(DepartmentUserLink.user_id).where(DepartmentUserLink.department_id == department_id)
+    ).all()
+    return [int(user_id) for user_id in rows if user_id is not None]
+
+
+@app.put("/api/departments/{department_id}/users", status_code=204)
+def set_department_users(
+    department_id: int,
+    payload: DepartmentUsersUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    require_admin(current_user)
+    dept = session.get(Department, department_id)
+    if not dept or dept.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="Departamento não encontrado.")
+
+    user_ids = list({int(uid) for uid in (payload.user_ids or []) if int(uid) > 0})
+    if user_ids:
+        allowed = session.exec(
+            select(User.id).where(
+                User.organization_id == current_user.organization_id,
+                User.id.in_(user_ids),
+            )
+        ).all()
+        allowed_set = {int(uid) for uid in allowed if uid is not None}
+        if allowed_set != set(user_ids):
+            raise HTTPException(status_code=400, detail="Um ou mais usuários são inválidos.")
+
+    session.exec(delete(DepartmentUserLink).where(DepartmentUserLink.department_id == department_id))
+    for user_id in user_ids:
+        session.add(DepartmentUserLink(department_id=department_id, user_id=user_id))
+    session.commit()
 
 
 @app.post("/api/users", response_model=UserRead, status_code=201)

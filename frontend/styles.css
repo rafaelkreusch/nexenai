@@ -1747,6 +1747,193 @@ button.reminder-trigger .reminder-trigger-label {
   box-shadow: none;
   border-color: rgba(255, 255, 255, 0.14);
   color: #ffffff;
+  position: relative;
+}
+
+.sidebar .conversation-actions-toggle {
+  position: absolute;
+  top: auto;
+  right: 10px;
+  bottom: 10px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.sidebar .conversation-item:hover .conversation-actions-toggle,
+.sidebar .conversation-item:focus-within .conversation-actions-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar .conversation-actions-toggle:hover,
+.sidebar .conversation-actions-toggle:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  outline: none;
+}
+
+.sidebar .conversation-pinned-indicator {
+  position: absolute;
+  right: 44px;
+  bottom: 10px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+}
+
+.sidebar .conversation-pinned-indicator svg {
+  transform: translateY(2px);
+}
+
+.conversation-action-menu {
+  position: fixed;
+  z-index: 130;
+  min-width: 240px;
+  max-width: min(320px, 92vw);
+  border-radius: 16px;
+  background: #111827;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 24px 55px rgba(15, 23, 42, 0.45);
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.conversation-action-menu.hidden {
+  display: none;
+}
+
+.conversation-action-menu button {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba(248, 250, 252, 0.95);
+  border-radius: 14px;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.conversation-action-menu button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.department-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  align-items: start;
+}
+
+.department-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.department-item {
+  width: 100%;
+  text-align: left;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 0.85rem 0.9rem;
+  background: rgba(15, 23, 42, 0.04);
+  cursor: pointer;
+}
+
+.department-item:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.department-item.active {
+  border-color: rgba(33, 17, 129, 0.35);
+  background: rgba(33, 17, 129, 0.08);
+}
+
+.department-item-name {
+  font-weight: 700;
+}
+
+.department-item-meta {
+  margin-top: 0.15rem;
+  font-size: 0.85rem;
+  color: rgba(17, 24, 39, 0.7);
+}
+
+.department-detail {
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.03);
+}
+
+.department-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.department-users-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.department-user-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.35rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.department-user-row:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.department-user-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
+.department-user-name {
+  font-size: 0.95rem;
+}
+
+.form-error.success {
+  color: #059669;
+}
+
+@media (max-width: 860px) {
+  .department-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .sidebar .conversation-preview,

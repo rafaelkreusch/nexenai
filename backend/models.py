@@ -122,6 +122,14 @@ class Conversation(ConversationBase, table=True):
     )
 
 
+class ConversationPin(SQLModel, table=True):
+    conversation_id: Optional[int] = Field(
+        default=None, foreign_key="conversation.id", primary_key=True
+    )
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id", primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class ConversationCreate(ConversationBase):
     pass
 
@@ -151,6 +159,7 @@ class ConversationSummary(SQLModel):
     owner_user_id: Optional[int] = None
     tags: List["TagRead"] = []
     unread_count: int = 0
+    is_pinned: bool = False
     avatar_url: Optional[str] = None
     avatar_updated_at: Optional[datetime] = None
 
@@ -327,6 +336,41 @@ class User(SQLModel, table=True):
     tokens: List["SessionToken"] = Relationship(back_populates="user")
 
 
+class Department(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    organization_id: int = Field(foreign_key="organization.id", index=True)
+    name: str = Field(index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DepartmentUserLink(SQLModel, table=True):
+    department_id: Optional[int] = Field(
+        default=None, foreign_key="department.id", primary_key=True
+    )
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id", primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DepartmentCreate(SQLModel):
+    name: str
+
+
+class DepartmentUpdate(SQLModel):
+    name: Optional[str] = None
+
+
+class DepartmentRead(SQLModel):
+    id: int
+    organization_id: int
+    name: str
+    created_at: datetime
+    member_count: int = 0
+
+
+class DepartmentUsersUpdate(SQLModel):
+    user_ids: List[int] = []
+
+
 class UserRead(SQLModel):
     id: int
     organization_id: Optional[int] = None
@@ -335,6 +379,7 @@ class UserRead(SQLModel):
     is_active: bool
     is_admin: bool
     created_at: datetime
+    departments: List[str] = []
 
 
 class UserCreate(SQLModel):
@@ -522,6 +567,7 @@ __all__ = [
     "ConversationUpdate",
     "ConversationRead",
     "ConversationSummary",
+    "ConversationPin",
     "ConversationAvatar",
     "ConversationNote",
     "ConversationNoteCreate",
@@ -539,6 +585,12 @@ __all__ = [
     "SessionRotateRequest",
     "User",
     "UserRead",
+    "Department",
+    "DepartmentUserLink",
+    "DepartmentCreate",
+    "DepartmentUpdate",
+    "DepartmentRead",
+    "DepartmentUsersUpdate",
     "AuthLogin",
     "AuthRegister",
     "AuthResponse",

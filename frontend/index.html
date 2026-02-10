@@ -1251,6 +1251,22 @@
 
               </button>
 
+              <button type="button" class="settings-nav-item" data-settings-target="settingsDepartmentsSection" data-admin-only>
+
+                <span class="settings-nav-icon" aria-hidden="true">🏷️</span>
+
+                <span class="settings-nav-copy">
+
+                  <strong>Departamentos</strong>
+
+                  <span>Crie setores e organize usuários da empresa.</span>
+
+                </span>
+
+                <span class="settings-nav-arrow" aria-hidden="true">›</span>
+
+              </button>
+
               <button type="button" class="settings-nav-item" data-settings-target="settingsQuickRepliesSection">
 
                 <span class="settings-nav-icon" aria-hidden="true">⚡</span>
@@ -1322,6 +1338,75 @@
               </div>
 
             </section>
+
+            </section>
+
+            <section id="settingsDepartmentsSection" class="settings-section hidden">
+
+              <section class="settings-card department-card" id="departmentAdminSection">
+
+                <header class="settings-card-head">
+
+                  <div>
+
+                    <p class="eyebrow">Organização</p>
+
+                    <h3>Departamentos</h3>
+
+                    <p class="card-subtitle">Crie departamentos e adicione os usuários da organização.</p>
+
+                  </div>
+
+                </header>
+
+                <form id="departmentCreateForm" class="stack">
+
+                  <label>
+
+                    <span>Nome do departamento</span>
+
+                    <input id="departmentCreateName" type="text" placeholder="Ex: Suporte" />
+
+                  </label>
+
+                  <div class="row">
+
+                    <button id="departmentCreateButton" type="submit" class="primary">Criar departamento</button>
+
+                    <span id="departmentCreateError" class="form-error" role="status" aria-live="polite"></span>
+
+                  </div>
+
+                </form>
+
+                <div class="department-grid">
+                  <div class="department-list-wrap">
+                    <div class="muted small">Departamentos</div>
+                    <div id="departmentList" class="department-list"></div>
+                  </div>
+
+                  <div id="departmentDetail" class="department-detail hidden">
+                    <div class="department-detail-head">
+                      <div>
+                        <div class="muted small">Selecionado</div>
+                        <strong id="departmentDetailTitle"></strong>
+                      </div>
+                      <button id="departmentDeleteButton" type="button" class="ghost small">Excluir</button>
+                    </div>
+
+                    <div class="department-members">
+                      <div class="muted small">Usuários</div>
+                      <div id="departmentUsersList" class="department-users-list"></div>
+                    </div>
+
+                    <div class="row">
+                      <button id="departmentSaveUsersButton" type="button" class="primary">Salvar usuários</button>
+                      <span id="departmentSaveError" class="form-error" role="status" aria-live="polite"></span>
+                    </div>
+                  </div>
+                </div>
+
+              </section>
 
             </section>
 
