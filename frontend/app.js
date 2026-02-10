@@ -99,6 +99,10 @@ const settingsUserEl = document.getElementById("settingsUser");
 const settingsOrgEl = document.getElementById("settingsOrg");
 
 const userInfoEl = document.getElementById("userInfo");
+const userMenuButton = document.getElementById("userMenuButton");
+const userMenuPanel = document.getElementById("userMenuPanel");
+const userMenuOrgEl = document.getElementById("userMenuOrg");
+const userMenuNameEl = document.getElementById("userMenuName");
 
 const orgInfoEl = document.getElementById("orgInfo");
 
@@ -128,6 +132,32 @@ const chatsCountEl = document.getElementById("chatsCount");
 
 const groupsCountEl = document.getElementById("groupsCount");
 
+function normalizeBrazilPhone(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+
+  if (!digits) return "";
+
+  const trimmed = digits.replace(/^0+/, "");
+  const hasCountry = trimmed.startsWith("55");
+  let national = hasCountry ? trimmed.slice(2) : trimmed;
+
+  if (national.length === 10) {
+    const ddd = national.slice(0, 2);
+    const subscriber = national.slice(2);
+    const first = subscriber[0];
+
+    // Heurística: números móveis antigos (8 dígitos) geralmente começam com 6-9,
+    // e hoje usam 9 dígitos (com "9" após o DDD).
+    if (first && Number(first) >= 6) {
+      national = `${ddd}9${subscriber}`;
+    }
+  }
+
+  if (national.length !== 10 && national.length !== 11) return trimmed;
+
+  return `55${national}`;
+}
+
 const sideNavButtons = document.querySelectorAll(".side-nav button[data-panel]");
 
 const workspace = document.querySelector(".workspace");
@@ -139,6 +169,8 @@ const conversationSearchInput = document.getElementById("conversationSearch");
 const tagFilterButton = document.getElementById("tagFilterButton");
 
 const tagFilterMenu = document.getElementById("tagFilterMenu");
+const conversationFilterButton = document.getElementById("conversationFilterButton");
+const conversationFilterMenu = document.getElementById("conversationFilterMenu");
 
 const tagMenuToggle = document.getElementById("tagMenuToggle");
 
@@ -630,10 +662,26 @@ function normalizePhoneDigits(value) {
 function normalizePhoneForCompare(value) {
   const digits = normalizePhoneDigits(value);
   if (!digits) return "";
-  if (digits.length > 11) {
-    return digits.slice(-11);
+
+  // Strip country code if present (Brazil)
+  let national = digits;
+  if ((national.length === 12 || national.length === 13) && national.startsWith("55")) {
+    national = national.slice(2);
+  } else if (national.length > 11) {
+    national = national.slice(-11);
   }
-  return digits;
+
+  // Normalize legacy mobile numbers without the 9th digit (DDD + 8 digits)
+  if (national.length === 10) {
+    const ddd = national.slice(0, 2);
+    const subscriber = national.slice(2);
+    const first = subscriber[0];
+    if (first && Number(first) >= 6) {
+      national = `${ddd}9${subscriber}`;
+    }
+  }
+
+  return national;
 }
 
 function digitsToE164(digits) {
@@ -4256,11 +4304,41 @@ newConversationForm.addEventListener("submit", async (event) => {
 
   event.preventDefault();
 
+  const rawPhone = document.getElementById("debtorPhone").value;
+  const normalizedPhone = normalizeBrazilPhone(rawPhone);
+
+  if (!normalizedPhone) {
+    alert("Informe um telefone com DDD (ex.: 47997093208 ou 5547997093208).");
+    return;
+  }
+
+  if (
+    !normalizedPhone.startsWith("55") ||
+    (normalizedPhone.length !== 12 && normalizedPhone.length !== 13)
+  ) {
+    alert("Telefone inválido. Use um número com DDD (10 ou 11 dígitos) e, se quiser, com 55.");
+    return;
+  }
+
+  const target = normalizePhoneForCompare(normalizedPhone);
+  const existing = (state.conversations || []).find((conversation) => {
+    const current = normalizePhoneForCompare(conversation.debtor_phone);
+    return current && current === target;
+  });
+  if (existing) {
+    selectConversation(existing.id);
+    newConversationForm.classList.add("collapsed");
+    toggleNewConversationButton?.classList.remove("active");
+    toggleNewConversationButton?.setAttribute("aria-expanded", "false");
+    newConversationSection?.classList.remove("is-open");
+    return;
+  }
+
   const payload = {
 
     debtor_name: document.getElementById("debtorName").value,
 
-    debtor_phone: document.getElementById("debtorPhone").value,
+    debtor_phone: normalizedPhone,
 
     notes: document.getElementById("debtorNotes").value || null,
 
@@ -4282,6 +4360,11 @@ newConversationForm.addEventListener("submit", async (event) => {
 
     selectConversation(conversation.id);
 
+    newConversationForm.classList.add("collapsed");
+    toggleNewConversationButton?.classList.remove("active");
+    toggleNewConversationButton?.setAttribute("aria-expanded", "false");
+    newConversationSection?.classList.remove("is-open");
+
   } catch (error) {
 
     alert(error.message);
@@ -4292,7 +4375,7 @@ newConversationForm.addEventListener("submit", async (event) => {
 
 
 
-refreshButton.addEventListener("click", () => loadConversations());
+refreshButton?.addEventListener("click", () => loadConversations());
 
 editContactNameButton?.addEventListener("click", async () => {
   if (!state.selectedConversation) return;
@@ -4623,6 +4706,16 @@ document.addEventListener("click", (event) => {
   }
 
   if (
+    conversationFilterMenu &&
+    !conversationFilterMenu.classList.contains("hidden") &&
+    !conversationFilterMenu.contains(event.target) &&
+    !conversationFilterButton?.contains(event.target)
+  ) {
+    conversationFilterMenu.classList.add("hidden");
+    conversationFilterButton?.setAttribute("aria-expanded", "false");
+  }
+
+  if (
     tagMenu &&
     !tagMenu.classList.contains("hidden") &&
     !tagMenu.contains(event.target) &&
@@ -4637,6 +4730,16 @@ document.addEventListener("click", (event) => {
     !emojiToggleButton?.contains(event.target)
   ) {
     closeEmojiPicker();
+  }
+
+  if (
+    userMenuPanel &&
+    !userMenuPanel.classList.contains("hidden") &&
+    !userMenuPanel.contains(event.target) &&
+    !userMenuButton?.contains(event.target)
+  ) {
+    userMenuPanel.classList.add("hidden");
+    userMenuButton?.setAttribute("aria-expanded", "false");
   }
 });
 
@@ -4655,6 +4758,10 @@ document.addEventListener("keydown", (event) => {
     }
     if (state.imagePreviewOpen) {
       closeImagePreview();
+    }
+    if (userMenuPanel && !userMenuPanel.classList.contains("hidden")) {
+      userMenuPanel.classList.add("hidden");
+      userMenuButton?.setAttribute("aria-expanded", "false");
     }
   }
 });
@@ -4978,6 +5085,14 @@ function updateIntegrationStatus(status) {
 
 }
 
+if (conversationFilterButton && conversationFilterMenu) {
+  conversationFilterButton.addEventListener("click", () => {
+    const willOpen = conversationFilterMenu.classList.contains("hidden");
+    conversationFilterButton.setAttribute("aria-expanded", String(willOpen));
+    conversationFilterMenu.classList.toggle("hidden", !willOpen);
+  });
+}
+
 
 
 function updateRotateSessionButtonAvailability() {
@@ -5299,7 +5414,12 @@ function updateUserInfo() {
 
   const label = state.user.full_name ? `${state.user.full_name} (${state.user.username})` : state.user.username;
 
-  userInfoEl.textContent = label;
+  if (userMenuNameEl && userMenuOrgEl) {
+    userMenuNameEl.textContent = label;
+    userMenuOrgEl.textContent = state.organization?.name || "";
+  } else if (userInfoEl) {
+    userInfoEl.textContent = label;
+  }
 
   settingsUserEl.textContent = label;
 
@@ -5314,6 +5434,17 @@ function updateUserInfo() {
   renderUsers();
   updateScopeControls();
   updateNoteButtonState();
+}
+
+if (userMenuButton && userMenuPanel) {
+  userMenuButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const willOpen = userMenuPanel.classList.contains("hidden");
+    userMenuPanel.classList.toggle("hidden", !willOpen);
+    userMenuButton.setAttribute("aria-expanded", String(willOpen));
+  });
 }
 
 

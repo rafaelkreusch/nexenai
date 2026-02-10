@@ -226,7 +226,7 @@
 
         <div class="brand">
 
-          <img src="/static/assets/logonex.png" alt="Nexen.chat" class="brand-logo" />
+          <div class="brand-title" aria-label="Nexen.ai">Nexen.ai</div>
 
           <div>
 
@@ -240,23 +240,28 @@
 
           <button id="reminderBell" class="icon-button" title="Lembretes" type="button">
 
-            <svg class="bell-icon" viewBox="0 0 24 24" aria-hidden="true">
-
-              <path
-
-                fill="currentColor"
-
-                d="M10 21a2 2 0 0 0 4 0Zm10-3h-2V11a6 6 0 0 0-12 0v7H4a1 1 0 0 0 0 2h16a1 1 0 0 0 0-2Z"
-
-              />
-
+            <svg class="bell-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <path d="M10.268 21a2 2 0 0 0 3.464 0"/>
+              <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>
             </svg>
 
             <span id="reminderBadge" class="badge hidden">0</span>
 
           </button>
 
-          <div id="userInfo"></div>
+          <div id="userInfo" class="user-menu-container">
+            <button id="userMenuButton" class="icon-button" type="button" title="Conta" aria-label="Conta" aria-haspopup="menu" aria-expanded="false">
+              <svg class="user-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="8" r="5"/>
+                <path d="M20 21a8 8 0 0 0-16 0"/>
+              </svg>
+            </button>
+
+            <div id="userMenuPanel" class="user-menu-panel hidden" role="menu" aria-label="Conta">
+              <div id="userMenuOrg" class="user-menu-org"></div>
+              <div id="userMenuName" class="user-menu-name"></div>
+            </div>
+          </div>
 
         </div>
 
@@ -406,57 +411,42 @@
 
             <div>
 
-              <h1>Minhas conversas</h1>
+              <h1>Conversas</h1>
 
-              <p class="subtitle">Selecione para continuar</p>
 
             </div>
 
-            <button id="refreshConversations" title="Atualizar conversas">↻</button>
+            <button
+              id="toggleNewConversation"
+              class="toolbar-button icon-only"
+              type="button"
+              title="Nova conversa"
+              aria-label="Nova conversa"
+              aria-expanded="false"
+            >
+              <svg class="toolbar-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/>
+                <path d="M8 12h8"/>
+                <path d="M12 8v8"/>
+              </svg>
+
+              <span class="sr-only">Nova conversa</span>
+            </button>
 
           </header>
 
           <section class="conversation-search">
+            <div class="conversation-filter" role="search">
+              <div class="conversation-filter-field">
+                <svg class="conversation-filter-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <circle cx="11" cy="11" r="7"/>
+                  <path d="m21 21-4.3-4.3"/>
+                </svg>
 
-            <input type="search" id="conversationSearch" placeholder="Pesquisar" />
-
+                <input type="search" id="conversationSearch" placeholder="Buscar por nome ou telefone" />
+              </div>
+            </div>
           </section>
-
-          <div class="scope-tabs" id="scopeTabs" role="group" aria-label="Escopo das conversas">
-
-            <button
-
-              type="button"
-
-              class="scope-chip active"
-
-              data-scope="mine"
-
-              id="scopeMineButton"
-
-            >
-
-              Somente eu
-
-            </button>
-
-            <button
-
-              type="button"
-
-              class="scope-chip"
-
-              data-scope="all"
-
-              id="scopeAllButton"
-
-            >
-
-              Todos
-
-          </button>
-
-        </div>
 
         <div class="conversation-controls">
 
@@ -508,23 +498,22 @@
 
                 id="tagFilterButton"
 
-                class="toolbar-button"
+                class="toolbar-button icon-only"
 
                 type="button"
 
-                title="Filtrar por etiquetas"
+                title="Etiquetas"
 
-                aria-label="Filtrar"
+                aria-label="Etiquetas"
 
               >
 
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-
-                  <path d="M4 4h16l-6 7v5l-4 2v-7z" />
-
+                <svg class="toolbar-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/>
+                  <circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>
                 </svg>
 
-                <span>Etiquetas</span>
+                <span class="sr-only">Etiquetas</span>
 
               </button>
 
@@ -532,35 +521,40 @@
 
             </div>
 
-            <div class="toolbar-spacer" aria-hidden="true"></div>
+            <div class="toolbar-button-group">
+              <button
+                id="conversationFilterButton"
+                class="toolbar-button icon-only"
+                type="button"
+                title="Filtro"
+                aria-label="Filtro"
+                aria-expanded="false"
+              >
+                <svg class="toolbar-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/>
+                </svg>
+                <span class="sr-only">Filtro</span>
+              </button>
 
-            <button
+              <div id="conversationFilterMenu" class="tag-menu hidden" role="dialog" aria-label="Filtros">
+                <div class="filter-menu-section">
+                  <div class="filter-menu-title">Escopo</div>
+                  <div class="scope-tabs scope-tabs--inline" id="scopeTabs" role="group" aria-label="Escopo das conversas">
+                    <button type="button" class="scope-chip active" data-scope="mine" id="scopeMineButton">
+                      Somente eu
+                    </button>
 
-              id="toggleNewConversation"
+                    <button type="button" class="scope-chip" data-scope="all" id="scopeAllButton">
+                      Todos
+                    </button>
+                  </div>
+                </div>
 
-              class="toolbar-button primary"
-
-              type="button"
-
-              title="Nova conversa"
-
-              aria-label="Nova conversa"
-
-              aria-expanded="false"
-
-            >
-
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-
-                <line x1="12" y1="5" x2="12" y2="19" />
-
-                <line x1="5" y1="12" x2="19" y2="12" />
-
-              </svg>
-
-              <span>Nova conversa</span>
-
-            </button>
+                <div class="filter-menu-hint muted">
+                  Mais filtros serão adicionados aqui.
+                </div>
+              </div>
+            </div>
 
           </div>
 
@@ -694,7 +688,8 @@
 
               <button id="tagMenuToggle" class="ghost small call-button" aria-label="Etiquetas" title="Etiquetas" disabled>
                 <svg class="call-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                  <path d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z"/>
+                  <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/>
+                  <circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>
                 </svg>
                 <span class="sr-only">Etiquetas</span>
               </button>
