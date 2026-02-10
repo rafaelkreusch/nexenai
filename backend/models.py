@@ -239,6 +239,17 @@ class MessageRead(MessageBase):
     timestamp: datetime
     is_read: bool
     media_url: Optional[str] = None
+    is_deleted_for_all: bool = False
+    deleted_for_all_at: Optional[datetime] = None
+
+
+class MessageDeletion(SQLModel, table=True):
+    message_id: Optional[int] = Field(
+        default=None, foreign_key="message.id", primary_key=True
+    )
+    deleted_for_all: bool = Field(default=False)
+    deleted_at: datetime = Field(default_factory=datetime.utcnow)
+    deleted_by_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
 
 class IncomingMessagePayload(SQLModel):
@@ -576,6 +587,7 @@ __all__ = [
     "Message",
     "MessageCreate",
     "MessageRead",
+    "MessageDeletion",
     "IncomingMessagePayload",
     "CallStartRequest",
     "CallRejectRequest",

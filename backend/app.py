@@ -67,6 +67,7 @@ from models import (
     MessageDirection,
     MessageType,
     MessageRead,
+    MessageDeletion,
     OrganizationCredentialsRead,
     OrganizationCredentialsUpdate,
     Organization,
@@ -1452,11 +1453,16 @@ def append_webhook_dump(provider: str, payload: Any) -> None:
 
 
 
-def serialize_message_entity(message: Message) -> MessageRead:
+def serialize_message_entity(
+    message: Message, deletion_entry: Optional[MessageDeletion] = None
+) -> MessageRead:
     data = MessageRead.model_validate(message)
     if message.media_path:
         data.media_url = media_storage.build_url(message.media_path)
     data.media_path = None
+    if deletion_entry and deletion_entry.deleted_for_all:
+        data.is_deleted_for_all = True
+        data.deleted_for_all_at = deletion_entry.deleted_at
     return data
 
 
@@ -1994,7 +2000,69 @@ def list_messages(
             message.is_read = True
             session.add(message)
     session.commit()
-    return [serialize_message_entity(message) for message in messages]
+    message_ids = [message.id for message in messages if message.id]
+    deletion_map: Dict[int, MessageDeletion] = {}
+    if message_ids:
+        deletions = session.exec(
+            select(MessageDeletion).where(MessageDeletion.message_id.in_(message_ids))
+        ).all()
+        deletion_map = {
+            entry.message_id: entry for entry in deletions if entry.message_id is not None
+        }
+    return [
+        serialize_message_entity(message, deletion_map.get(message.id or 0))
+        for message in messages
+    ]
+
+
+@app.post("/api/messages/{message_id}/delete-for-all", response_model=MessageRead)
+def delete_message_for_all(
+    message_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> MessageRead:
+    message = session.get(Message, message_id)
+    if not message:
+        raise HTTPException(status_code=404, detail="Mensagem não encontrada.")
+    if not message.conversation_id:
+        raise HTTPException(status_code=400, detail="Mensagem sem conversa associada.")
+
+    conversation = session.get(Conversation, message.conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    ensure_conversation_access(conversation, current_user)
+
+    if message.direction != MessageDirection.agent:
+        raise HTTPException(status_code=400, detail="Só é possível apagar mensagens enviadas por você.")
+    if not message.integration_message_id:
+        raise HTTPException(status_code=400, detail="Mensagem sem ID do provedor para exclusão.")
+
+    integration_session: Optional[DeviceSession] = None
+    if message.via_session_id:
+        integration_session = session.get(DeviceSession, message.via_session_id)
+    client = get_gateway_client(integration_session)
+    if not isinstance(client, UazapiClient):
+        raise HTTPException(status_code=400, detail="Apagar para todos disponível apenas para Uazapi.")
+    if not client.is_configured:
+        raise HTTPException(status_code=400, detail="Uazapi não configurada para este número.")
+
+    try:
+        client.delete_message_for_all(message.integration_message_id)
+    except Exception as exc:
+        logger.exception("Falha ao apagar mensagem na Uazapi: %s", exc)
+        raise HTTPException(status_code=502, detail="Falha ao apagar mensagem na Uazapi.")
+
+    deletion = session.get(MessageDeletion, message_id)
+    if not deletion:
+        deletion = MessageDeletion(message_id=message_id)
+    deletion.deleted_for_all = True
+    deletion.deleted_at = datetime.utcnow()
+    deletion.deleted_by_user_id = current_user.id
+    session.add(deletion)
+    session.commit()
+    session.refresh(deletion)
+
+    return serialize_message_entity(message, deletion)
 
 
 @app.get(

@@ -214,6 +214,12 @@ conversationActionMenu.setAttribute("role", "menu");
 document.body.appendChild(conversationActionMenu);
 let conversationActionMenuConversationId = null;
 
+const messageActionMenu = document.createElement("div");
+messageActionMenu.className = "message-action-menu hidden";
+messageActionMenu.setAttribute("role", "menu");
+document.body.appendChild(messageActionMenu);
+let messageActionMenuMessageId = null;
+
 const chatTitleEl = document.getElementById("chatTitle");
 
 const chatSubtitleEl = document.getElementById("chatSubtitle");
@@ -745,6 +751,46 @@ function hideConversationActionMenu() {
   conversationActionMenu.classList.add("hidden");
   conversationActionMenu.innerHTML = "";
   conversationActionMenuConversationId = null;
+}
+
+function hideMessageActionMenu() {
+  messageActionMenu.classList.add("hidden");
+  messageActionMenu.innerHTML = "";
+  messageActionMenuMessageId = null;
+}
+
+function showMessageActionMenu({ x, y, message }) {
+  if (!message) return;
+  messageActionMenuMessageId = message.id;
+  messageActionMenu.innerHTML = "";
+
+  const deleteForAll = document.createElement("button");
+  deleteForAll.type = "button";
+  deleteForAll.textContent = "Apagar para todos";
+  deleteForAll.addEventListener("click", async () => {
+    hideMessageActionMenu();
+    try {
+      const updated = await fetchJson(`/api/messages/${message.id}/delete-for-all`, {
+        method: "POST",
+      });
+      if (updated && state.latestMessages?.length) {
+        const idx = state.latestMessages.findIndex((m) => m.id === message.id);
+        if (idx >= 0) {
+          state.latestMessages[idx] = { ...state.latestMessages[idx], ...updated };
+        }
+        renderMessages(state.latestMessages, { notes: state.conversationNotes || [] });
+      } else {
+        await loadMessages();
+      }
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  messageActionMenu.append(deleteForAll);
+  messageActionMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - 340))}px`;
+  messageActionMenu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - 160))}px`;
+  messageActionMenu.classList.remove("hidden");
 }
 
 function sortConversationsForSidebar(list) {
@@ -3528,6 +3574,9 @@ function renderMessages(messages, options = {}) {
     const bubble = document.createElement("div");
     bubble.className = `message ${message.direction}`;
     bubble.dataset.messageId = message.id;
+    if (message.is_deleted_for_all) {
+      bubble.classList.add("deleted-for-all");
+    }
 
     if (message.reply_to_message_id) {
       const quoted = messageMap.get(message.reply_to_message_id) || null;
@@ -3568,6 +3617,40 @@ function renderMessages(messages, options = {}) {
 
       bubble.appendChild(textEl);
 
+    }
+
+    if (message.direction === "agent") {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "message-actions-toggle";
+      toggle.title = "Opções";
+      toggle.setAttribute("aria-label", "Opções");
+      toggle.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>`;
+      toggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (message.is_deleted_for_all) return;
+        const rect = toggle.getBoundingClientRect();
+        const willOpen =
+          messageActionMenuMessageId !== message.id ||
+          messageActionMenu.classList.contains("hidden");
+        hideMessageActionMenu();
+        if (willOpen) {
+          showMessageActionMenu({
+            x: rect.left,
+            y: rect.bottom + 8,
+            message,
+          });
+        }
+      });
+      bubble.appendChild(toggle);
+    }
+
+    if (message.is_deleted_for_all) {
+      const deletedNote = document.createElement("div");
+      deletedNote.className = "message-deleted-note";
+      deletedNote.textContent = "Apagada para todos";
+      bubble.appendChild(deletedNote);
     }
 
 
@@ -4915,6 +4998,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeTagMenus();
     hideConversationActionMenu();
+    hideMessageActionMenu();
     if (reminderModal && !reminderModal.classList.contains("hidden")) {
       closeReminderModal(true);
     }
@@ -5797,12 +5881,24 @@ document.addEventListener("click", (event) => {
   hideConversationActionMenu();
 });
 
+document.addEventListener("click", (event) => {
+  if (messageActionMenu.classList.contains("hidden")) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (messageActionMenu.contains(target)) return;
+  hideMessageActionMenu();
+});
+
 window.addEventListener("resize", () => {
   hidePhoneActionMenu();
 });
 
 window.addEventListener("resize", () => {
   hideConversationActionMenu();
+});
+
+window.addEventListener("resize", () => {
+  hideMessageActionMenu();
 });
 
 
