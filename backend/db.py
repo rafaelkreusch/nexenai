@@ -52,12 +52,17 @@ def init_db() -> None:
 
 
 def apply_migrations() -> None:
-    """Execute simple in-place migrations for existing SQLite databases."""
+    """Execute simple in-place migrations.
 
-    if not DATABASE_URL.startswith("sqlite"):
-        return
+    Historically this project used ad-hoc migrations for SQLite only. We also run a
+    minimal subset for Postgres to keep Render deployments working when the schema
+    evolves without a full migration framework.
+    """
 
-    migrations: Iterable[tuple[str, str, str]] = [
+    dialect = engine.dialect.name
+
+    if dialect == "sqlite":
+        migrations: Iterable[tuple[str, str, str]] = [
         ("user", "organization_id", "INTEGER REFERENCES organization(id)"),
         ("user", "is_admin", "BOOLEAN DEFAULT 0"),
         ("conversation", "organization_id", "INTEGER REFERENCES organization(id)"),
@@ -75,6 +80,9 @@ def apply_migrations() -> None:
         ("message", "media_duration_seconds", "REAL"),
         ("message", "integration_message_id", "TEXT"),
         ("message", "reply_to_message_id", "INTEGER REFERENCES message(id)"),
+        ("message", "original_content", "TEXT"),
+        ("message", "edited_at", "TEXT"),
+        ("message", "edited_by_user_id", "INTEGER"),
         ("tag", "owner_user_id", "INTEGER REFERENCES user(id)"),
     ]
 
@@ -128,6 +136,29 @@ def apply_migrations() -> None:
         conn.exec_driver_sql(
             "UPDATE user SET is_admin = 1 WHERE username = ?", ("admin",)
         )
+        return
+
+    if dialect in {"postgresql", "postgres"}:
+        pg_migrations: Iterable[tuple[str, str, str]] = [
+            ("message", "original_content", "TEXT"),
+            ("message", "edited_at", "TIMESTAMP"),
+            ("message", "edited_by_user_id", "INTEGER"),
+        ]
+        with engine.begin() as conn:
+            for table, column, ddl in pg_migrations:
+                exists = conn.exec_driver_sql(
+                    """
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = %s AND column_name = %s
+                    LIMIT 1
+                    """,
+                    (table, column),
+                ).fetchone()
+                if exists:
+                    continue
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+        return
 
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_username ON user (username)"

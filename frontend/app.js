@@ -286,6 +286,12 @@ const closeNoteModalButton = document.getElementById("closeNoteModal");
 const noteForm = document.getElementById("noteForm");
 const noteTextInput = document.getElementById("noteText");
 const noteFormError = document.getElementById("noteFormError");
+const editMessageModal = document.getElementById("editMessageModal");
+const closeEditMessageModalButton = document.getElementById("closeEditMessageModal");
+const editMessageForm = document.getElementById("editMessageForm");
+const editMessageTextInput = document.getElementById("editMessageText");
+const editMessageError = document.getElementById("editMessageError");
+const cancelEditMessageButton = document.getElementById("cancelEditMessage");
 const bulkPanel = document.getElementById("bulkPanel");
 
 const bulkCampaignList = document.getElementById("bulkCampaignList");
@@ -411,6 +417,7 @@ const audioFileInput = document.getElementById("audioFileInput");
 const audioUploadLabel = document.getElementById("audioUploadLabel");
 const audioSendButton = document.getElementById("audioSendButton");
 const audioPreviewEl = document.getElementById("audioPreview");
+const signMessagesToggle = document.getElementById("signMessagesToggle");
 const mediaFileInput = document.getElementById("mediaFileInput");
 const mediaUploadLabel = document.getElementById("mediaUploadLabel");
 const emojiToggleButton = document.getElementById("emojiToggleButton");
@@ -602,6 +609,7 @@ const state = {
   avatarTimestamps: {},
 
   imagePreviewOpen: false,
+  signMessagesEnabled: false,
 
 };
 
@@ -609,6 +617,48 @@ function getQuickRepliesStorageKey() {
   const orgId = state.organization?.id ?? "0";
   const userId = state.user?.id ?? "0";
   return `quickReplies:${orgId}:${userId}`;
+}
+
+function getSignMessagesStorageKey() {
+  const orgId = state.organization?.id ?? "0";
+  const userId = state.user?.id ?? "0";
+  return `signMessages:${orgId}:${userId}`;
+}
+
+function loadSignMessagesPreference() {
+  try {
+    return localStorage.getItem(getSignMessagesStorageKey()) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveSignMessagesPreference(enabled) {
+  try {
+    localStorage.setItem(getSignMessagesStorageKey(), enabled ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
+
+function getSignatureLabel() {
+  const username = (state.user?.username || "").trim();
+  const fullName = (state.user?.full_name || "").trim();
+  return username || fullName || "Você";
+}
+
+function applySignatureIfEnabled(text) {
+  if (!state.signMessagesEnabled) return text;
+  const label = getSignatureLabel();
+  return `${label}:\n${text}`;
+}
+
+function syncSignMessagesToggle() {
+  const enabled = loadSignMessagesPreference();
+  state.signMessagesEnabled = enabled;
+  if (signMessagesToggle) {
+    signMessagesToggle.checked = enabled;
+  }
 }
 
 function loadQuickReplies() {
@@ -1053,6 +1103,22 @@ function showMessageActionMenu({ x, y, message }) {
   });
 
   messageActionMenu.appendChild(selectButton);
+
+  const canEditMessage =
+    message.direction === "agent" &&
+    !message.is_deleted_for_all &&
+    String(message.message_type || "text") === "text";
+
+  if (canEditMessage) {
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.textContent = "Editar mensagem";
+    editButton.addEventListener("click", () => {
+      hideMessageActionMenu();
+      openEditMessageModal(message);
+    });
+    messageActionMenu.appendChild(editButton);
+  }
 
   const canDeleteForAll =
     message.direction === "agent" && !message.is_deleted_for_all;
@@ -1834,6 +1900,32 @@ function closeNoteModal() {
   }
   if (noteFormError) {
     noteFormError.textContent = "";
+  }
+}
+
+let editMessageTargetId = null;
+
+function openEditMessageModal(message) {
+  if (!editMessageModal || !editMessageTextInput || !editMessageForm) return;
+  if (!message) return;
+  editMessageTargetId = message.id;
+  if (editMessageError) editMessageError.textContent = "";
+  editMessageTextInput.value = String(message.content || "");
+  editMessageModal.classList.remove("hidden");
+  editMessageModal.setAttribute("aria-hidden", "false");
+  setTimeout(() => editMessageTextInput.focus(), 50);
+}
+
+function closeEditMessageModal() {
+  if (!editMessageModal) return;
+  editMessageModal.classList.add("hidden");
+  editMessageModal.setAttribute("aria-hidden", "true");
+  editMessageTargetId = null;
+  if (editMessageTextInput) {
+    editMessageTextInput.value = "";
+  }
+  if (editMessageError) {
+    editMessageError.textContent = "";
   }
 }
 
@@ -3932,19 +4024,13 @@ function renderMessages(messages, options = {}) {
     }
 
     const shouldRenderText =
-
       (!mediaHandled && message.content) ||
-
       (message.message_type === "audio" && !!message.content);
 
     if (shouldRenderText) {
-
       const textEl = document.createElement("p");
-
       appendMessageTextWithLinks(textEl, message.content || "");
-
       bubble.appendChild(textEl);
-
     }
 
     if (state.messageSelectionMode) {
@@ -4854,11 +4940,12 @@ if (messageForm) {
 
   if (!state.selectedConversation) return;
 
-  const content = messageInput.value.trim();
+  const raw = messageInput.value.trim();
 
-  if (!content) return;
+  if (!raw) return;
 
-  const originalContent = content;
+  const content = applySignatureIfEnabled(raw);
+  const originalContent = raw;
 
   messageInput.value = "";
   scheduleMessageInputResize();
@@ -4983,6 +5070,13 @@ if (messageInput && messageForm) {
 
   });
 
+}
+
+if (signMessagesToggle) {
+  signMessagesToggle.addEventListener("change", () => {
+    state.signMessagesEnabled = Boolean(signMessagesToggle.checked);
+    saveSignMessagesPreference(state.signMessagesEnabled);
+  });
 }
 
 
@@ -6412,6 +6506,52 @@ closeNoteModalButton?.addEventListener("click", () => closeNoteModal());
 noteModal?.addEventListener("click", (event) => {
   if (event.target === noteModal) {
     closeNoteModal();
+  }
+});
+
+editMessageModal?.addEventListener("click", (event) => {
+  if (event.target === editMessageModal) {
+    closeEditMessageModal();
+  }
+});
+
+closeEditMessageModalButton?.addEventListener("click", () => closeEditMessageModal());
+cancelEditMessageButton?.addEventListener("click", () => closeEditMessageModal());
+
+editMessageForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!editMessageTargetId) return;
+  const text = (editMessageTextInput?.value || "").trim();
+  if (!text) {
+    if (editMessageError) editMessageError.textContent = "Digite um texto.";
+    return;
+  }
+  if (editMessageError) editMessageError.textContent = "";
+  try {
+    const updated = await fetchJson(`/api/messages/${editMessageTargetId}/edit`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    });
+    closeEditMessageModal();
+    if (updated && state.latestMessages?.length) {
+      const idx = state.latestMessages.findIndex((m) => m.id === updated.id);
+      if (idx >= 0) {
+        state.latestMessages[idx] = { ...state.latestMessages[idx], ...updated };
+      }
+      renderMessages(state.latestMessages, {
+        notes: state.conversationNotes || [],
+        preserveScroll: true,
+      });
+    } else {
+      await loadMessages();
+    }
+  } catch (error) {
+    if (editMessageError) {
+      editMessageError.textContent =
+        error.message || "Não foi possível editar a mensagem.";
+    } else {
+      alert(error.message || "Não foi possível editar a mensagem.");
+    }
   }
 });
 if (noteForm) {
@@ -8418,6 +8558,7 @@ async function enterWorkspace() {
   updateUserInfo();
 
   updateTagFilterButton();
+  syncSignMessagesToggle();
 
   const tasks = [
     loadConversations(),

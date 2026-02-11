@@ -70,6 +70,7 @@ from models import (
     MessageDeletion,
     MessageReaction,
     MessageReactRequest,
+    MessageEditRequest,
     OrganizationCredentialsRead,
     OrganizationCredentialsUpdate,
     Organization,
@@ -1571,6 +1572,54 @@ def get_gateway_client(integration_session: Optional[DeviceSession]):
     return evolution_client
 
 
+def resolve_uazapi_session_for_conversation(
+    session: Session,
+    *,
+    conversation: Conversation,
+    current_user: User,
+) -> Optional[DeviceSession]:
+    """Best-effort resolver for the Uazapi session when message.via_session_id is missing.
+
+    Some older records or webhook-ingested messages may not have `via_session_id` set.
+    For Uazapi-only operations (delete/edit/react), we try to locate the most recent
+    configured Uazapi session for the conversation owner (fallback to current user,
+    then any configured session in the organization).
+    """
+
+    def query_for_owner(owner_id: Optional[int]) -> Optional[DeviceSession]:
+        if not owner_id:
+            return None
+        candidate = session.exec(
+            select(DeviceSession)
+            .where(DeviceSession.organization_id == conversation.organization_id)
+            .where(DeviceSession.provider == "uazapi")
+            .where(DeviceSession.owner_user_id == owner_id)
+            .where(DeviceSession.integration_base_url.is_not(None))
+            .where(DeviceSession.integration_instance_id.is_not(None))
+            .where(DeviceSession.integration_token.is_not(None))
+            .order_by(DeviceSession.created_at.desc())
+        ).first()
+        return candidate if (candidate and session_has_credentials(candidate)) else None
+
+    candidate = query_for_owner(conversation.owner_user_id)
+    if candidate:
+        return candidate
+    candidate = query_for_owner(current_user.id)
+    if candidate:
+        return candidate
+
+    any_candidate = session.exec(
+        select(DeviceSession)
+        .where(DeviceSession.organization_id == conversation.organization_id)
+        .where(DeviceSession.provider == "uazapi")
+        .where(DeviceSession.integration_base_url.is_not(None))
+        .where(DeviceSession.integration_instance_id.is_not(None))
+        .where(DeviceSession.integration_token.is_not(None))
+        .order_by(DeviceSession.created_at.desc())
+    ).first()
+    return any_candidate if (any_candidate and session_has_credentials(any_candidate)) else None
+
+
 def extract_provider_message_id(payload: Any) -> Optional[str]:
     """Busca recursivamente um identificador retornado pelo gateway."""
 
@@ -2072,6 +2121,10 @@ def delete_message_for_all(
     integration_session: Optional[DeviceSession] = None
     if message.via_session_id:
         integration_session = session.get(DeviceSession, message.via_session_id)
+    if not integration_session:
+        integration_session = resolve_uazapi_session_for_conversation(
+            session, conversation=conversation, current_user=current_user
+        )
     client = get_gateway_client(integration_session)
     if not isinstance(client, UazapiClient):
         raise HTTPException(status_code=400, detail="Apagar para todos disponível apenas para Uazapi.")
@@ -2095,6 +2148,90 @@ def delete_message_for_all(
     session.refresh(deletion)
 
     return serialize_message_entity(message, deletion)
+
+
+@app.post("/api/messages/{message_id}/edit", response_model=MessageRead)
+def edit_message(
+    message_id: int,
+    payload: MessageEditRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> MessageRead:
+    message = session.get(Message, message_id)
+    if not message:
+        raise HTTPException(status_code=404, detail="Mensagem não encontrada.")
+    if not message.conversation_id:
+        raise HTTPException(status_code=400, detail="Mensagem sem conversa associada.")
+
+    conversation = session.get(Conversation, message.conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    ensure_conversation_access(conversation, current_user)
+
+    if message.direction != MessageDirection.agent:
+        raise HTTPException(status_code=400, detail="Só é possível editar mensagens enviadas por você.")
+    if message.message_type != MessageType.text:
+        raise HTTPException(status_code=400, detail="Só é possível editar mensagens de texto.")
+    if not payload.text or not payload.text.strip():
+        raise HTTPException(status_code=400, detail="Texto inválido.")
+
+    if not current_user.is_admin and message.author_user_id and message.author_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Você não pode editar esta mensagem.")
+
+    if not message.integration_message_id:
+        raise HTTPException(status_code=400, detail="Mensagem sem ID do provedor para edição.")
+
+    integration_session: Optional[DeviceSession] = None
+    if message.via_session_id:
+        integration_session = session.get(DeviceSession, message.via_session_id)
+    if not integration_session:
+        integration_session = resolve_uazapi_session_for_conversation(
+            session, conversation=conversation, current_user=current_user
+        )
+    client = get_gateway_client(integration_session)
+    if not isinstance(client, UazapiClient):
+        raise HTTPException(status_code=400, detail="Editar mensagem disponível apenas para Uazapi.")
+    if not client.is_configured:
+        raise HTTPException(status_code=400, detail="Uazapi não configurada para este número.")
+
+    new_text = payload.text.strip()
+    try:
+        provider_response = client.edit_message(message_id=message.integration_message_id, text=new_text)
+    except Exception as exc:
+        logger.exception("Falha ao editar mensagem na Uazapi: %s", exc)
+        raise HTTPException(status_code=502, detail="Falha ao editar mensagem na Uazapi.")
+
+    provider_message_id = extract_provider_message_id(provider_response)
+    if not message.original_content:
+        message.original_content = message.content
+    message.content = new_text
+    message.edited_at = datetime.utcnow()
+    message.edited_by_user_id = current_user.id
+    if provider_message_id:
+        message.integration_message_id = provider_message_id
+
+    session.add(message)
+    session.commit()
+    session.refresh(message)
+
+    deletion_entry = session.get(MessageDeletion, message_id)
+    reactions = session.exec(select(MessageReaction).where(MessageReaction.message_id == message_id)).all()
+    reaction_counts: Dict[str, int] = {}
+    my_reaction: Optional[str] = None
+    for reaction in reactions:
+        emoji = (reaction.emoji or "").strip()
+        if not emoji:
+            continue
+        reaction_counts[emoji] = reaction_counts.get(emoji, 0) + 1
+        if reaction.user_id == current_user.id:
+            my_reaction = emoji
+
+    return serialize_message_entity(
+        message,
+        deletion_entry,
+        my_reaction=my_reaction,
+        reaction_counts=reaction_counts,
+    )
 
 
 @app.post("/api/messages/{message_id}/react", response_model=MessageRead)
@@ -2124,6 +2261,10 @@ def react_to_message(
     integration_session: Optional[DeviceSession] = None
     if message.via_session_id:
         integration_session = session.get(DeviceSession, message.via_session_id)
+    if not integration_session:
+        integration_session = resolve_uazapi_session_for_conversation(
+            session, conversation=conversation, current_user=current_user
+        )
     client = get_gateway_client(integration_session)
     if not isinstance(client, UazapiClient):
         raise HTTPException(status_code=400, detail="Reações disponíveis apenas para Uazapi.")

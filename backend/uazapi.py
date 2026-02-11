@@ -449,6 +449,24 @@ class UazapiClient:
         )
         return response.json()
 
+    def edit_message(self, *, message_id: str, text: str) -> Dict[str, Any]:
+        if not self.is_configured:
+            raise RuntimeError("Uazapi nao configurada")
+        payload: Dict[str, Any] = {"id": message_id, "text": text}
+        if self.instance_id:
+            payload["session"] = self.instance_id
+        paths = [
+            "/message/edit",
+            f"/message/edit/{self.instance_id}",
+        ]
+        response = self._post_variants(paths, payload, timeout=30)
+        logger.info(
+            "Uazapi edit_message status=%s body=%s",
+            response.status_code,
+            response.text[:200],
+        )
+        return response.json()
+
 
 class UazapiAdminClient:
     """Cliente para operaçoes administrativas da Uazapi (provisionamento)."""

@@ -224,10 +224,12 @@ class Message(MessageBase, table=True):
     is_read: bool = Field(default=False)
     author_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     integration_message_id: Optional[str] = Field(default=None, index=True)
+    original_content: Optional[str] = None
+    edited_at: Optional[datetime] = None
+    edited_by_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
     conversation: Optional[Conversation] = Relationship(back_populates="messages")
     session: Optional["DeviceSession"] = Relationship(back_populates="messages")
-    author: Optional["User"] = Relationship()
 
 
 class MessageCreate(MessageBase):
@@ -241,8 +243,15 @@ class MessageRead(MessageBase):
     media_url: Optional[str] = None
     is_deleted_for_all: bool = False
     deleted_for_all_at: Optional[datetime] = None
+    original_content: Optional[str] = None
+    edited_at: Optional[datetime] = None
+    edited_by_user_id: Optional[int] = None
     my_reaction: Optional[str] = None
     reaction_counts: Dict[str, int] = Field(default_factory=dict)
+
+
+class MessageEditRequest(SQLModel):
+    text: str
 
 
 class MessageDeletion(SQLModel, table=True):

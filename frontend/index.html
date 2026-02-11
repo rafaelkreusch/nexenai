@@ -820,6 +820,16 @@
                   </svg>
                 </button>
 
+                <div class="sign-toggle" title="Assinar mensagens">
+                  <label class="switch" aria-label="Assinar mensagens">
+                    <input type="checkbox" id="signMessagesToggle" />
+                    <span class="switch-track" aria-hidden="true">
+                      <span class="switch-thumb" aria-hidden="true"></span>
+                    </span>
+                  </label>
+                  <span class="sign-label">Assinar</span>
+                </div>
+
                 <div id="emojiPickerPanel" class="emoji-picker-panel hidden">
 
                   <emoji-picker data-emoji-version="14.0"></emoji-picker>
@@ -1224,6 +1234,46 @@
           <p id="noteFormError" class="form-error"></p>
 
           <button type="submit" class="primary">Salvar nota</button>
+
+        </form>
+
+      </div>
+
+    </div>
+
+
+    <div id="editMessageModal" class="modal hidden" aria-hidden="true">
+
+      <div class="modal-content note-modal">
+
+        <header class="modal-header">
+
+          <div>
+
+            <p class="eyebrow">Mensagens</p>
+
+            <h2>Editar mensagem</h2>
+
+            <p class="subtitle">O texto original ficará riscado no histórico.</p>
+
+          </div>
+
+          <button id="closeEditMessageModal" aria-label="Fechar">×</button>
+
+        </header>
+
+        <form id="editMessageForm" class="note-form" autocomplete="off">
+
+          <label for="editMessageText">Novo texto</label>
+
+          <textarea id="editMessageText" rows="4" placeholder="Digite o novo texto..." required></textarea>
+
+          <p id="editMessageError" class="form-error"></p>
+
+          <div class="modal-actions">
+            <button type="button" id="cancelEditMessage" class="ghost">Cancelar</button>
+            <button type="submit" id="saveEditMessage" class="primary">Salvar</button>
+          </div>
 
         </form>
 
