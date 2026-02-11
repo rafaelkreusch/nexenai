@@ -10,9 +10,9 @@
 
   --sidebar-width: 420px;
 
-  --primary: #211181;
+  --primary: #cd5cdd;
 
-  --primary-dark: #180c63;
+  --primary-dark: #a84bb6;
 
   --muted: rgba(21, 22, 36, 0.6);
 
@@ -5926,7 +5926,7 @@ button.reminder-trigger {
 
   font-size: 0.74rem;
 
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.8);
 
   display: inline-flex;
 
@@ -5960,9 +5960,9 @@ button.reminder-trigger {
 
 .audio-toolbar .file-input:hover {
 
-  color: var(--primary);
+  color: #ffffff;
 
-  background: rgba(33, 17, 129, 0.08);
+  background: rgba(205, 92, 221, 0.14);
 
 }
 
@@ -6004,13 +6004,13 @@ button.reminder-trigger {
 
   gap: 0.5rem;
 
-  background: rgba(33, 17, 129, 0.08);
+  background: rgba(205, 92, 221, 0.12);
 
   border-radius: 999px;
 
   padding: 0.3rem 0.8rem;
 
-  color: var(--primary);
+  color: rgba(255, 255, 255, 0.9);
 
   font-weight: 600;
 
@@ -6032,6 +6032,20 @@ button.reminder-trigger {
 
   gap: 0.25rem;
 
+}
+
+.audio-status-actions .ghost.tiny {
+  border-color: transparent;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+
+.audio-status-actions .ghost.tiny:hover,
+.audio-status-actions .ghost.tiny:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  outline: none;
 }
 
 
