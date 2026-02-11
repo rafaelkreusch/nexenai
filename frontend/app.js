@@ -208,6 +208,12 @@ phoneActionMenu.className = "phone-action-menu hidden";
 phoneActionMenu.setAttribute("role", "menu");
 document.body.appendChild(phoneActionMenu);
 
+const reactionPicker = document.createElement("div");
+reactionPicker.className = "reaction-picker hidden";
+reactionPicker.setAttribute("role", "menu");
+document.body.appendChild(reactionPicker);
+let reactionPickerMessageId = null;
+
 const conversationActionMenu = document.createElement("div");
 conversationActionMenu.className = "conversation-action-menu hidden";
 conversationActionMenu.setAttribute("role", "menu");
@@ -219,6 +225,11 @@ messageActionMenu.className = "message-action-menu hidden";
 messageActionMenu.setAttribute("role", "menu");
 document.body.appendChild(messageActionMenu);
 let messageActionMenuMessageId = null;
+
+const messageSelectionBar = document.getElementById("messageSelectionBar");
+const messageSelectionCountEl = document.getElementById("messageSelectionCount");
+const messageSelectionCopyButton = document.getElementById("messageSelectionCopy");
+const messageSelectionCancelButton = document.getElementById("messageSelectionCancel");
 
 const chatTitleEl = document.getElementById("chatTitle");
 
@@ -237,6 +248,14 @@ const chatAvatarEl = document.getElementById("chatAvatar");
 const callStartButton = document.getElementById("callStartButton");
 
 const callRejectButton = document.getElementById("callRejectButton");
+
+const messageSearchToggleButton = document.getElementById("messageSearchToggle");
+const chatSearchBar = document.getElementById("chatSearchBar");
+const chatSearchInput = document.getElementById("chatSearchInput");
+const chatSearchPrevButton = document.getElementById("chatSearchPrev");
+const chatSearchNextButton = document.getElementById("chatSearchNext");
+const chatSearchCloseButton = document.getElementById("chatSearchClose");
+const chatSearchMetaEl = document.getElementById("chatSearchMeta");
 
 const reminderBell = document.getElementById("reminderBell");
 
@@ -527,6 +546,11 @@ const state = {
   },
   calendarWeekOffset: 0,
   calendarEvents: [],
+  messageSelectionMode: false,
+  selectedMessageIds: [],
+  messageSearchQuery: "",
+  messageSearchMatches: [],
+  messageSearchMatchIndex: -1,
   supportsRecording:
 
     typeof window !== "undefined" &&
@@ -759,35 +783,309 @@ function hideMessageActionMenu() {
   messageActionMenuMessageId = null;
 }
 
+function hideReactionPicker() {
+  reactionPicker.classList.add("hidden");
+  reactionPicker.innerHTML = "";
+  reactionPickerMessageId = null;
+}
+
+async function reactToMessage(message, emoji) {
+  const updated = await fetchJson(`/api/messages/${message.id}/react`, {
+    method: "POST",
+    body: JSON.stringify({ emoji: String(emoji || "") }),
+  });
+  if (updated && state.latestMessages?.length) {
+    const idx = state.latestMessages.findIndex((m) => m.id === message.id);
+    if (idx >= 0) {
+      state.latestMessages[idx] = { ...state.latestMessages[idx], ...updated };
+    }
+    renderMessages(state.latestMessages, {
+      notes: state.conversationNotes || [],
+      preserveScroll: true,
+    });
+  } else {
+    await loadMessages();
+  }
+}
+
+function showReactionPicker({ x, y, message }) {
+  if (!message) return;
+  reactionPickerMessageId = message.id;
+  reactionPicker.innerHTML = "";
+
+  const common = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+  const row = document.createElement("div");
+  row.className = "reaction-picker-row";
+
+  common.forEach((emoji) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "reaction-picker-emoji";
+    btn.textContent = emoji;
+    if (message.my_reaction === emoji) {
+      btn.classList.add("active");
+    }
+    btn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const nextEmoji = message.my_reaction === emoji ? "" : emoji;
+      try {
+        await reactToMessage(message, nextEmoji);
+      } catch (error) {
+        alert(error.message);
+      } finally {
+        hideReactionPicker();
+      }
+    });
+    row.appendChild(btn);
+  });
+
+  reactionPicker.appendChild(row);
+  reactionPicker.style.left = `${Math.max(8, Math.min(x, window.innerWidth - 340))}px`;
+  reactionPicker.style.top = `${Math.max(8, Math.min(y, window.innerHeight - 160))}px`;
+  reactionPicker.classList.remove("hidden");
+}
+
+function syncMessageSelectionBar() {
+  if (!messageSelectionBar) return;
+  const count = (state.selectedMessageIds || []).length;
+  if (messageSelectionCountEl) {
+    messageSelectionCountEl.textContent = String(count);
+  }
+  messageSelectionBar.classList.toggle("hidden", !state.messageSelectionMode);
+}
+
+function setMessageSelectionMode(enabled) {
+  state.messageSelectionMode = Boolean(enabled);
+  if (!state.messageSelectionMode) {
+    state.selectedMessageIds = [];
+  }
+  hideMessageActionMenu();
+  syncMessageSelectionBar();
+  if (state.latestMessages?.length) {
+    renderMessages(state.latestMessages, {
+      notes: state.conversationNotes || [],
+      preserveScroll: true,
+    });
+  }
+}
+
+function toggleMessageSelected(messageId) {
+  const id = Number(messageId);
+  if (!id) return;
+  const set = new Set(state.selectedMessageIds || []);
+  if (set.has(id)) set.delete(id);
+  else set.add(id);
+  state.selectedMessageIds = Array.from(set);
+  syncMessageSelectionBar();
+  if (state.latestMessages?.length) {
+    renderMessages(state.latestMessages, {
+      notes: state.conversationNotes || [],
+      preserveScroll: true,
+    });
+  }
+  if (!state.selectedMessageIds.length) {
+    setMessageSelectionMode(false);
+  }
+}
+
+function getMessagesForSearch(messages, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return messages;
+  return (messages || []).filter((message) => {
+    const hay = `${message.content || ""}`.toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+function updateChatSearchMeta(total, filtered) {
+  if (!chatSearchMetaEl) return;
+  if (!state.messageSearchQuery) {
+    chatSearchMetaEl.textContent = "";
+    return;
+  }
+  chatSearchMetaEl.textContent = `${filtered} resultado(s)`;
+}
+
+function setChatSearchOpen(open) {
+  if (!chatSearchBar) return;
+  const shouldOpen = Boolean(open);
+  chatSearchBar.classList.toggle("hidden", !shouldOpen);
+  if (!shouldOpen) {
+    state.messageSearchQuery = "";
+    state.messageSearchMatches = [];
+    state.messageSearchMatchIndex = -1;
+    if (chatSearchInput) chatSearchInput.value = "";
+    updateChatSearchMeta(0, 0);
+    if (state.fullMessages?.length) {
+      renderMessages(state.fullMessages, { notes: state.conversationNotes || [], fullMessages: state.fullMessages, preserveScroll: true });
+    } else if (state.latestMessages?.length) {
+      renderMessages(state.latestMessages, { notes: state.conversationNotes || [], preserveScroll: true });
+    }
+  } else {
+    chatSearchInput?.focus();
+    chatSearchInput?.select();
+  }
+}
+
+function syncChatSearchNavigationState() {
+  const total = (state.messageSearchMatches || []).length;
+  const hasQuery = Boolean(String(state.messageSearchQuery || "").trim());
+  const enabled = hasQuery && total > 0;
+  if (chatSearchPrevButton) chatSearchPrevButton.disabled = !enabled;
+  if (chatSearchNextButton) chatSearchNextButton.disabled = !enabled;
+  if (chatSearchMetaEl) {
+    if (!hasQuery) {
+      chatSearchMetaEl.textContent = "";
+    } else if (!total) {
+      chatSearchMetaEl.textContent = "0 resultado(s)";
+    } else {
+      const current = Math.max(0, Math.min(state.messageSearchMatchIndex, total - 1));
+      chatSearchMetaEl.textContent = `${current + 1}/${total}`;
+    }
+  }
+}
+
+function applyChatMessageSearch({ focus = true } = {}) {
+  const query = String(state.messageSearchQuery || "").trim();
+  const all = state.fullMessages?.length ? state.fullMessages : state.latestMessages || [];
+  const matches = query
+    ? all
+        .filter((message) => {
+          if (!message) return false;
+          const content = String(message.content || "");
+          if (!content) return false;
+          return content.toLowerCase().includes(query.toLowerCase());
+        })
+        .map((message) => message.id)
+    : [];
+
+  state.messageSearchMatches = matches;
+  state.messageSearchMatchIndex = matches.length ? 0 : -1;
+  syncChatSearchNavigationState();
+
+  renderMessages(all, {
+    notes: state.conversationNotes || [],
+    fullMessages: all,
+    preserveScroll: true,
+  });
+
+  if (focus && matches.length) {
+    requestAnimationFrame(() => focusMessageById(matches[0]));
+  }
+}
+
+function moveChatSearchMatch(delta) {
+  const total = (state.messageSearchMatches || []).length;
+  if (!total) return;
+  const current = state.messageSearchMatchIndex >= 0 ? state.messageSearchMatchIndex : 0;
+  const next = (current + delta + total) % total;
+  state.messageSearchMatchIndex = next;
+  syncChatSearchNavigationState();
+  const messageId = state.messageSearchMatches[next];
+  if (messageId) {
+    focusMessageById(messageId);
+    // refresh highlight
+    const all = state.fullMessages?.length ? state.fullMessages : state.latestMessages || [];
+    renderMessages(all, {
+      notes: state.conversationNotes || [],
+      fullMessages: all,
+      preserveScroll: true,
+    });
+    requestAnimationFrame(() => focusMessageById(messageId));
+  }
+}
+
+function summarizeMessageForCopy(message) {
+  if (!message) return "";
+  const parts = [];
+  const when = message.timestamp ? formatTimestamp(message.timestamp) : "";
+  const who = message.direction === "agent" ? "Você" : getConversationContactLabel();
+  if (when) parts.push(`[${when}]`);
+  if (who) parts.push(`${who}:`);
+  if (message.message_type && message.message_type !== "text" && !message.content) {
+    const labelMap = { image: "[imagem]", audio: "[áudio]", document: "[arquivo]" };
+    parts.push(labelMap[message.message_type] || `[${message.message_type}]`);
+  } else {
+    parts.push((message.content || "").trim());
+  }
+  return parts.filter(Boolean).join(" ");
+}
+
+async function copySelectedMessagesToClipboard() {
+  const ids = new Set(state.selectedMessageIds || []);
+  if (!ids.size) return;
+  const messages = (state.latestMessages || [])
+    .filter((m) => ids.has(m.id))
+    .slice()
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  const text = messages.map(summarizeMessageForCopy).filter(Boolean).join("\n");
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // fallback
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+}
+
 function showMessageActionMenu({ x, y, message }) {
   if (!message) return;
   messageActionMenuMessageId = message.id;
   messageActionMenu.innerHTML = "";
 
-  const deleteForAll = document.createElement("button");
-  deleteForAll.type = "button";
-  deleteForAll.textContent = "Apagar para todos";
-  deleteForAll.addEventListener("click", async () => {
+  const selectButton = document.createElement("button");
+  selectButton.type = "button";
+  selectButton.textContent = "Selecionar mensagens";
+  selectButton.addEventListener("click", () => {
     hideMessageActionMenu();
-    try {
-      const updated = await fetchJson(`/api/messages/${message.id}/delete-for-all`, {
-        method: "POST",
-      });
-      if (updated && state.latestMessages?.length) {
-        const idx = state.latestMessages.findIndex((m) => m.id === message.id);
-        if (idx >= 0) {
-          state.latestMessages[idx] = { ...state.latestMessages[idx], ...updated };
-        }
-        renderMessages(state.latestMessages, { notes: state.conversationNotes || [] });
-      } else {
-        await loadMessages();
-      }
-    } catch (error) {
-      alert(error.message);
-    }
+    setMessageSelectionMode(true);
+    toggleMessageSelected(message.id);
   });
 
-  messageActionMenu.append(deleteForAll);
+  messageActionMenu.appendChild(selectButton);
+
+  const canDeleteForAll =
+    message.direction === "agent" &&
+    !message.is_deleted_for_all &&
+    String(message.provider || "").toLowerCase() === "uazapi";
+
+  if (canDeleteForAll) {
+    const deleteForAll = document.createElement("button");
+    deleteForAll.type = "button";
+    deleteForAll.textContent = "Apagar para todos";
+    deleteForAll.addEventListener("click", async () => {
+      hideMessageActionMenu();
+      try {
+        const updated = await fetchJson(`/api/messages/${message.id}/delete-for-all`, {
+          method: "POST",
+        });
+        if (updated && state.latestMessages?.length) {
+          const idx = state.latestMessages.findIndex((m) => m.id === message.id);
+          if (idx >= 0) {
+            state.latestMessages[idx] = { ...state.latestMessages[idx], ...updated };
+          }
+          renderMessages(state.latestMessages, { notes: state.conversationNotes || [] });
+        } else {
+          await loadMessages();
+        }
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+
+    messageActionMenu.appendChild(deleteForAll);
+  }
+
   messageActionMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - 340))}px`;
   messageActionMenu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - 160))}px`;
   messageActionMenu.classList.remove("hidden");
@@ -1544,11 +1842,15 @@ function closeNoteModal() {
 function setMessageFormAvailability(enabled) {
   messageInput.disabled = !enabled;
   messageSubmitButton.disabled = !enabled;
+  if (messageSearchToggleButton) {
+    messageSearchToggleButton.disabled = !enabled;
+  }
   if (!enabled) {
     messageInput.value = "";
     cancelPendingAudio();
     clearReplyContext();
     closeQuickReplyPanel();
+    setChatSearchOpen(false);
   }
   setAudioControlsAvailability(enabled);
   setAttachmentControlsAvailability(enabled);
@@ -3344,6 +3646,8 @@ async function selectConversation(conversationId) {
   state.selectedConversation = conversation;
   state.messagesSignature = null;
   state.latestMessages = [];
+  state.fullMessages = [];
+  setChatSearchOpen(false);
   clearReplyContext();
   closeEmojiPicker();
   renderChatHeader();
@@ -3369,6 +3673,7 @@ async function loadMessages() {
       fetchJson(`/api/conversations/${state.selectedConversation.id}/messages`),
       fetchJson(`/api/conversations/${state.selectedConversation.id}/notes`),
     ]);
+    state.fullMessages = messages;
     const signature = JSON.stringify(
       messages.map((message) => [
         message.id,
@@ -3391,8 +3696,11 @@ async function loadMessages() {
     state.messagesSignature = signature;
     state.notesSignature = notesSignature;
     state.conversationNotes = notes;
-    renderMessages(messages, { notes });
+    renderMessages(messages, { notes, fullMessages: messages });
     clearUnreadForActiveConversation();
+    if (state.messageSearchQuery) {
+      applyChatMessageSearch({ focus: false });
+    }
   } catch (error) {
     console.error(error);
   }
@@ -3494,8 +3802,21 @@ async function sendMediaFile(file) {
 
 
 function renderMessages(messages, options = {}) {
+  const previousScrollTop = messageListEl.scrollTop;
+  const previousScrollHeight = messageListEl.scrollHeight;
+  const previousClientHeight = messageListEl.clientHeight;
+  const wasNearBottom =
+    previousScrollTop + previousClientHeight >= previousScrollHeight - 48;
+  const preserveScroll = Boolean(options.preserveScroll);
   const notes = options.notes || state.conversationNotes || [];
-  state.latestMessages = messages.slice();
+  const fullMessages = Array.isArray(options.fullMessages) ? options.fullMessages : messages;
+  state.latestMessages = fullMessages.slice();
+  const searchQuery = String(state.messageSearchQuery || "").trim().toLowerCase();
+  const searchMatches = state.messageSearchMatches || [];
+  const activeMatchId =
+    searchMatches.length && state.messageSearchMatchIndex >= 0
+      ? searchMatches[Math.min(state.messageSearchMatchIndex, searchMatches.length - 1)]
+      : null;
   renderReplyPreview();
   messageListEl.innerHTML = "";
   if (!messages.length && !notes.length) {
@@ -3571,11 +3892,20 @@ function renderMessages(messages, options = {}) {
     }
 
     const message = entry.data;
+    const row = document.createElement("div");
+    row.className = `message-row ${message.direction}`;
+
     const bubble = document.createElement("div");
     bubble.className = `message ${message.direction}`;
     bubble.dataset.messageId = message.id;
     if (message.is_deleted_for_all) {
       bubble.classList.add("deleted-for-all");
+    }
+    if (searchQuery && String(message.content || "").toLowerCase().includes(searchQuery)) {
+      bubble.classList.add("search-hit");
+      if (activeMatchId && activeMatchId === message.id) {
+        bubble.classList.add("search-hit-active");
+      }
     }
 
     if (message.reply_to_message_id) {
@@ -3619,7 +3949,56 @@ function renderMessages(messages, options = {}) {
 
     }
 
-    if (message.direction === "agent") {
+    if (state.messageSelectionMode) {
+      const selectBox = document.createElement("button");
+      selectBox.type = "button";
+      selectBox.className = "message-select-box";
+      const isSelected = (state.selectedMessageIds || []).includes(message.id);
+      selectBox.classList.toggle("selected", isSelected);
+      selectBox.setAttribute("aria-label", isSelected ? "Desmarcar" : "Selecionar");
+      selectBox.innerHTML = `<svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>`;
+      selectBox.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleMessageSelected(message.id);
+      });
+      row.appendChild(selectBox);
+
+      bubble.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest("button") || target.closest("a") || target.closest("input")) return;
+        toggleMessageSelected(message.id);
+      });
+    }
+
+    if (!state.messageSelectionMode) {
+      const reactionToggle = document.createElement("button");
+      reactionToggle.type = "button";
+      reactionToggle.className = "message-reaction-toggle";
+      reactionToggle.title = "Reagir";
+      reactionToggle.setAttribute("aria-label", "Reagir");
+      reactionToggle.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg>`;
+      reactionToggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (message.is_deleted_for_all) return;
+        const rect = reactionToggle.getBoundingClientRect();
+        const willOpen =
+          reactionPickerMessageId !== message.id ||
+          reactionPicker.classList.contains("hidden");
+        hideMessageActionMenu();
+        hideReactionPicker();
+        if (willOpen) {
+          showReactionPicker({
+            x: rect.left,
+            y: rect.bottom + 8,
+            message,
+          });
+        }
+      });
+      bubble.appendChild(reactionToggle);
+
       const toggle = document.createElement("button");
       toggle.type = "button";
       toggle.className = "message-actions-toggle";
@@ -3634,6 +4013,7 @@ function renderMessages(messages, options = {}) {
         const willOpen =
           messageActionMenuMessageId !== message.id ||
           messageActionMenu.classList.contains("hidden");
+        hideReactionPicker();
         hideMessageActionMenu();
         if (willOpen) {
           showMessageActionMenu({
@@ -3653,7 +4033,53 @@ function renderMessages(messages, options = {}) {
       bubble.appendChild(deletedNote);
     }
 
-
+    const reactionCounts = message.reaction_counts || {};
+    const reactionEntries = Object.entries(reactionCounts).filter(
+      ([emoji, count]) => emoji && Number(count) > 0
+    );
+    if (reactionEntries.length) {
+      reactionEntries.sort((a, b) => Number(b[1]) - Number(a[1]));
+      const reactionsWrap = document.createElement("div");
+      reactionsWrap.className = "message-reactions";
+      reactionEntries.forEach(([emoji, count]) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "message-reaction";
+        btn.title = "Reagir";
+        btn.setAttribute("aria-label", "Reagir");
+        if (message.my_reaction === emoji) {
+          btn.classList.add("mine");
+        }
+        btn.textContent = count > 1 ? `${emoji} ${count}` : `${emoji}`;
+        btn.addEventListener("click", async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const nextEmoji = message.my_reaction === emoji ? "" : emoji;
+          try {
+            const updated = await fetchJson(`/api/messages/${message.id}/react`, {
+              method: "POST",
+              body: JSON.stringify({ emoji: nextEmoji }),
+            });
+            if (updated && state.latestMessages?.length) {
+              const idx = state.latestMessages.findIndex((m) => m.id === message.id);
+              if (idx >= 0) {
+                state.latestMessages[idx] = { ...state.latestMessages[idx], ...updated };
+              }
+              renderMessages(state.latestMessages, {
+                notes: state.conversationNotes || [],
+                preserveScroll: true,
+              });
+            } else {
+              await loadMessages();
+            }
+          } catch (error) {
+            alert(error.message);
+          }
+        });
+        reactionsWrap.appendChild(btn);
+      });
+      bubble.appendChild(reactionsWrap);
+    }
 
     const footer = document.createElement("div");
 
@@ -3680,10 +4106,23 @@ function renderMessages(messages, options = {}) {
     timeEl.textContent = formatTimestamp(timestamp || message.timestamp);
     footer.appendChild(timeEl);
     bubble.appendChild(footer);
-    messageListEl.appendChild(bubble);
+    row.appendChild(bubble);
+    messageListEl.appendChild(row);
   });
   requestAnimationFrame(() => {
-    messageListEl.scrollTop = messageListEl.scrollHeight;
+    const newScrollHeight = messageListEl.scrollHeight;
+    if (preserveScroll) {
+      const maxScrollTop = Math.max(0, newScrollHeight - messageListEl.clientHeight);
+      messageListEl.scrollTop = Math.max(0, Math.min(previousScrollTop, maxScrollTop));
+      return;
+    }
+    if (wasNearBottom) {
+      messageListEl.scrollTop = newScrollHeight;
+      return;
+    }
+
+    const delta = newScrollHeight - previousScrollHeight;
+    messageListEl.scrollTop = Math.max(0, previousScrollTop + delta);
 
   });
 
@@ -4918,7 +5357,7 @@ if (messageListEl) {
 
   });
 
-  messageListEl.addEventListener("keydown", (event) => {
+messageListEl.addEventListener("keydown", (event) => {
 
     if (event.key !== "Enter" && event.key !== " ") {
 
@@ -4936,9 +5375,31 @@ if (messageListEl) {
 
     }
 
-  });
+});
 
 }
+
+messageSelectionCancelButton?.addEventListener("click", () => setMessageSelectionMode(false));
+messageSelectionCopyButton?.addEventListener("click", async () => {
+  await copySelectedMessagesToClipboard();
+  setMessageSelectionMode(false);
+});
+
+messageSearchToggleButton?.addEventListener("click", () => {
+  if (messageSearchToggleButton.disabled) return;
+  const isOpen = chatSearchBar && !chatSearchBar.classList.contains("hidden");
+  setChatSearchOpen(!isOpen);
+});
+
+chatSearchCloseButton?.addEventListener("click", () => setChatSearchOpen(false));
+
+chatSearchInput?.addEventListener("input", (event) => {
+  state.messageSearchQuery = event.target.value || "";
+  applyChatMessageSearch({ focus: true });
+});
+
+chatSearchPrevButton?.addEventListener("click", () => moveChatSearchMatch(-1));
+chatSearchNextButton?.addEventListener("click", () => moveChatSearchMatch(1));
 
 
 
@@ -4963,6 +5424,14 @@ document.addEventListener("click", (event) => {
   ) {
     conversationFilterMenu.classList.add("hidden");
     conversationFilterButton?.setAttribute("aria-expanded", "false");
+  }
+
+  if (
+    reactionPicker &&
+    !reactionPicker.classList.contains("hidden") &&
+    !reactionPicker.contains(event.target)
+  ) {
+    hideReactionPicker();
   }
 
   if (
@@ -4999,6 +5468,10 @@ document.addEventListener("keydown", (event) => {
     closeTagMenus();
     hideConversationActionMenu();
     hideMessageActionMenu();
+    hideReactionPicker();
+    if (state.messageSelectionMode) {
+      setMessageSelectionMode(false);
+    }
     if (reminderModal && !reminderModal.classList.contains("hidden")) {
       closeReminderModal(true);
     }

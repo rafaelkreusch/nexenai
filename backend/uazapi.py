@@ -196,6 +196,36 @@ class UazapiClient:
             raise last_error
         raise RuntimeError("Uazapi nao aceitou o envio de audio")
 
+    def react_message(
+        self,
+        phone_number: str,
+        message_id: str,
+        emoji: str,
+    ) -> Dict[str, Any]:
+        if not self.is_configured:
+            raise RuntimeError("Uazapi nao configurada")
+        payload: Dict[str, Any] = {
+            "number": phone_number,
+            "id": message_id,
+            "text": emoji or "",
+        }
+        if self.instance_id:
+            payload["session"] = self.instance_id
+        paths = [
+            "/message/react",
+            f"/message/react/{self.instance_id}",
+        ]
+        response = self._post_variants(paths, payload, timeout=30)
+        logger.info(
+            "Uazapi react status=%s body=%s",
+            response.status_code,
+            response.text[:200],
+        )
+        try:
+            return response.json()
+        except Exception:
+            return {"status": response.status_code, "body": response.text}
+
     def send_media_file(
         self,
         phone_number: str,

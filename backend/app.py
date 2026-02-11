@@ -68,6 +68,8 @@ from models import (
     MessageType,
     MessageRead,
     MessageDeletion,
+    MessageReaction,
+    MessageReactRequest,
     OrganizationCredentialsRead,
     OrganizationCredentialsUpdate,
     Organization,
@@ -1454,7 +1456,11 @@ def append_webhook_dump(provider: str, payload: Any) -> None:
 
 
 def serialize_message_entity(
-    message: Message, deletion_entry: Optional[MessageDeletion] = None
+    message: Message,
+    deletion_entry: Optional[MessageDeletion] = None,
+    *,
+    my_reaction: Optional[str] = None,
+    reaction_counts: Optional[Dict[str, int]] = None,
 ) -> MessageRead:
     data = MessageRead.model_validate(message)
     if message.media_path:
@@ -1463,6 +1469,10 @@ def serialize_message_entity(
     if deletion_entry and deletion_entry.deleted_for_all:
         data.is_deleted_for_all = True
         data.deleted_for_all_at = deletion_entry.deleted_at
+    if my_reaction is not None:
+        data.my_reaction = my_reaction
+    if reaction_counts is not None:
+        data.reaction_counts = reaction_counts
     return data
 
 
@@ -2009,8 +2019,30 @@ def list_messages(
         deletion_map = {
             entry.message_id: entry for entry in deletions if entry.message_id is not None
         }
+    reaction_counts_map: Dict[int, Dict[str, int]] = {}
+    my_reaction_map: Dict[int, str] = {}
+    if message_ids:
+        reactions = session.exec(
+            select(MessageReaction).where(MessageReaction.message_id.in_(message_ids))
+        ).all()
+        for reaction in reactions:
+            if reaction.message_id is None:
+                continue
+            emoji = (reaction.emoji or "").strip()
+            if not emoji:
+                continue
+            bucket = reaction_counts_map.setdefault(reaction.message_id, {})
+            bucket[emoji] = bucket.get(emoji, 0) + 1
+            if reaction.user_id == current_user.id:
+                my_reaction_map[reaction.message_id] = emoji
+
     return [
-        serialize_message_entity(message, deletion_map.get(message.id or 0))
+        serialize_message_entity(
+            message,
+            deletion_map.get(message.id or 0),
+            my_reaction=my_reaction_map.get(message.id or 0),
+            reaction_counts=reaction_counts_map.get(message.id or 0, {}),
+        )
         for message in messages
     ]
 
@@ -2063,6 +2095,81 @@ def delete_message_for_all(
     session.refresh(deletion)
 
     return serialize_message_entity(message, deletion)
+
+
+@app.post("/api/messages/{message_id}/react", response_model=MessageRead)
+def react_to_message(
+    message_id: int,
+    payload: MessageReactRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> MessageRead:
+    message = session.get(Message, message_id)
+    if not message:
+        raise HTTPException(status_code=404, detail="Mensagem não encontrada.")
+    if not message.conversation_id:
+        raise HTTPException(status_code=400, detail="Mensagem sem conversa associada.")
+    conversation = session.get(Conversation, message.conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    ensure_conversation_access(conversation, current_user)
+
+    if not message.integration_message_id:
+        raise HTTPException(
+            status_code=400, detail="Mensagem sem ID do provedor para reagir."
+        )
+    if not conversation.debtor_phone:
+        raise HTTPException(status_code=400, detail="Conversa sem telefone associado.")
+
+    integration_session: Optional[DeviceSession] = None
+    if message.via_session_id:
+        integration_session = session.get(DeviceSession, message.via_session_id)
+    client = get_gateway_client(integration_session)
+    if not isinstance(client, UazapiClient):
+        raise HTTPException(status_code=400, detail="Reações disponíveis apenas para Uazapi.")
+    if not client.is_configured:
+        raise HTTPException(status_code=400, detail="Uazapi não configurada para este número.")
+
+    emoji = (payload.emoji or "").strip()
+
+    try:
+        client.react_message(conversation.debtor_phone, message.integration_message_id, emoji)
+    except Exception as exc:
+        logger.exception("Falha ao reagir mensagem na Uazapi: %s", exc)
+        raise HTTPException(status_code=502, detail="Falha ao reagir mensagem na Uazapi.")
+
+    existing = session.get(MessageReaction, (message_id, current_user.id))
+    if not emoji:
+        if existing:
+            session.delete(existing)
+            session.commit()
+    else:
+        if not existing:
+            existing = MessageReaction(message_id=message_id, user_id=current_user.id)
+        existing.emoji = emoji
+        existing.reacted_at = datetime.utcnow()
+        session.add(existing)
+        session.commit()
+
+    deletion = session.get(MessageDeletion, message_id)
+    reactions = session.exec(
+        select(MessageReaction).where(MessageReaction.message_id == message_id)
+    ).all()
+    counts: Dict[str, int] = {}
+    my_reaction: Optional[str] = None
+    for reaction in reactions:
+        em = (reaction.emoji or "").strip()
+        if not em:
+            continue
+        counts[em] = counts.get(em, 0) + 1
+        if reaction.user_id == current_user.id:
+            my_reaction = em
+    return serialize_message_entity(
+        message,
+        deletion,
+        my_reaction=my_reaction,
+        reaction_counts=counts,
+    )
 
 
 @app.get(

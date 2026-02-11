@@ -396,17 +396,16 @@ input::placeholder {
 
 .brand-logo {
 
-  height: 34px;
-
-  max-height: 34px;
-
-  width: 120px;
+  height: 42px;
+  max-height: 42px;
+  width: auto;
+  max-width: 220px;
 
   margin-top: 0;
 
   display: block;
 
-  object-fit: cover;
+  object-fit: contain;
 
   object-position: left center;
 
@@ -1066,6 +1065,115 @@ input::placeholder {
 
 }
 
+.chat-search-bar {
+  margin-left: auto;
+  margin-top: 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.chat-search-bar.hidden {
+  display: none;
+}
+
+.chat-search-icon {
+  width: 16px;
+  height: 16px;
+  color: rgba(255, 255, 255, 0.78);
+  flex: 0 0 auto;
+}
+
+.chat-search-bar input {
+  flex: 1;
+  min-width: 180px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.95);
+  outline: none;
+  font-size: 0.9rem;
+  padding: 0.2rem 0.25rem;
+}
+
+.chat-search-bar input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.chat-search-bar button {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.78);
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-search-bar button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.chat-search-bar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chat-search-bar button:focus-visible {
+  outline: none;
+}
+
+.chat-search-meta {
+  font-size: 0.82rem;
+  white-space: nowrap;
+  color: #ffffff;
+}
+
+.message.search-hit {
+  outline: 2px solid rgba(205, 92, 221, 0.35);
+  outline-offset: 2px;
+}
+
+.message.search-hit-active {
+  outline-color: rgba(205, 92, 221, 0.85);
+  box-shadow: 0 0 0 3px rgba(205, 92, 221, 0.18);
+}
+
+.message-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.message-reaction {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.95);
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.message-reaction.mine {
+  border-color: rgba(205, 92, 221, 0.55);
+  background: rgba(205, 92, 221, 0.14);
+}
+
+.message-reaction:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
 
 
 .chat-toolbar .call-button,
@@ -1073,6 +1181,8 @@ input::placeholder {
 .chat-toolbar #noteCreateButton,
 
 .chat-toolbar #tagMenuToggle,
+
+.chat-toolbar #messageSearchToggle,
 
 .chat-toolbar button.reminder-trigger {
 
@@ -1091,6 +1201,8 @@ input::placeholder {
 .chat-toolbar #noteCreateButton:hover:not(:disabled),
 
 .chat-toolbar #tagMenuToggle:hover:not(:disabled),
+
+.chat-toolbar #messageSearchToggle:hover:not(:disabled),
 
 .chat-toolbar button.reminder-trigger:hover:not(:disabled) {
 
@@ -1113,6 +1225,8 @@ input::placeholder {
 .chat-toolbar #noteCreateButton:focus-visible,
 
 .chat-toolbar #tagMenuToggle:focus-visible,
+
+.chat-toolbar #messageSearchToggle:focus-visible,
 
 .chat-toolbar button.reminder-trigger:focus-visible {
 
@@ -1196,6 +1310,12 @@ input::placeholder {
 
   color: var(--muted);
 
+}
+
+/* Temporariamente oculto (ligar/desligar) */
+#callStartButton,
+#callRejectButton {
+  display: none !important;
 }
 
 
@@ -3859,15 +3979,22 @@ button.small {
   border: none;
   background: transparent;
   box-shadow: none;
-  color: var(--primary);
+  color: #cd5cdd;
+  opacity: 0.95;
 }
 
 #toggleNewConversation.toolbar-button:hover,
 #toggleNewConversation.toolbar-button:focus-visible,
 #toggleNewConversation.toolbar-button.active {
-  background: rgba(33, 17, 129, 0.08);
+  background: transparent;
   box-shadow: none;
   transform: none;
+  opacity: 1;
+}
+
+#toggleNewConversation.toolbar-button .toolbar-icon {
+  width: 24px;
+  height: 24px;
 }
 
 #tagFilterButton.toolbar-button {
@@ -4797,13 +4924,114 @@ button.reminder-trigger {
 
 
 
-  .message-list::-webkit-scrollbar-thumb {
+.message-list::-webkit-scrollbar-thumb {
 
     background: rgba(255, 255, 255, 0.25);
 
     border-radius: 6px;
 
-  }
+}
+
+.message-selection-bar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.message-selection-bar .muted {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.message-selection-bar button.ghost {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.message-selection-bar button.ghost:hover,
+.message-selection-bar button.ghost:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+  outline: none;
+}
+
+.message-selection-bar.hidden {
+  display: none;
+}
+
+.message-selection-left {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+}
+
+.message-selection-count {
+  min-width: 18px;
+  text-align: center;
+}
+
+.message-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.message-row {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.message-row.agent .message {
+  margin-left: auto;
+}
+
+.message-row .message {
+  align-self: flex-start;
+}
+
+.message-select-box {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.9);
+  display: grid;
+  place-items: center;
+  margin-top: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.message-select-box .check-icon {
+  opacity: 0;
+  display: block;
+  margin: 0;
+}
+
+.message-select-box.selected {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.55);
+}
+
+.message-select-box.selected .check-icon {
+  opacity: 1;
+}
+
+.message.selection-target {
+  outline: 2px solid rgba(99, 102, 241, 0.45);
+  outline-offset: 2px;
+}
 
 .message {
   max-width: 62%;
@@ -4811,7 +5039,24 @@ button.reminder-trigger {
   border-radius: 8px;
   line-height: 1.4;
   position: relative;
+  overflow: visible;
   white-space: pre-wrap;
+}
+
+.message::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -52px;
+  bottom: 0;
+  width: 52px;
+  background: transparent;
+  z-index: 1;
+}
+
+.message.agent::after {
+  right: auto;
+  left: -52px;
 }
 
 .phone-link {
@@ -4891,9 +5136,45 @@ button.reminder-trigger {
   display: grid;
   place-items: center;
   border-radius: 999px;
+  z-index: 2;
   opacity: 0;
   pointer-events: none;
   transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.message-reaction-toggle {
+  position: absolute;
+  top: 8px;
+  right: -44px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.message.agent .message-reaction-toggle {
+  right: auto;
+  left: -44px;
+}
+
+.message:hover .message-reaction-toggle,
+.message:focus-within .message-reaction-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.message-reaction-toggle:hover,
+.message-reaction-toggle:focus-visible {
+  color: #ffffff;
+  outline: none;
 }
 
 .message:hover .message-actions-toggle,
@@ -4946,6 +5227,45 @@ button.reminder-trigger {
   border-color: rgba(99, 102, 241, 0.4);
 }
 
+.reaction-picker {
+  position: fixed;
+  z-index: 150;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.98);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.5);
+  padding: 0.25rem 0.35rem;
+}
+
+.reaction-picker.hidden {
+  display: none;
+}
+
+.reaction-picker-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.reaction-picker-emoji {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 999px;
+  font-size: 1.1rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+
+.reaction-picker-emoji:hover,
+.reaction-picker-emoji.active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(205, 92, 221, 0.35);
+}
+
 .message.deleted-for-all {
   opacity: 0.95;
 }
@@ -4957,6 +5277,11 @@ button.reminder-trigger {
 }
 
 .message.deleted-for-all .message-actions-toggle {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.message.deleted-for-all .message-reaction-toggle {
   opacity: 0 !important;
   pointer-events: none !important;
 }
@@ -5003,7 +5328,6 @@ button.reminder-trigger {
 
 .message.agent {
   background: #484b53;
-  align-self: flex-end;
   border-bottom-right-radius: 3px;
   color: #ffffff;
 }
@@ -5013,8 +5337,6 @@ button.reminder-trigger {
 .message.debtor {
 
   background: #202326;
-
-  align-self: flex-start;
 
   border-bottom-left-radius: 3px;
 
@@ -5426,6 +5748,18 @@ button.reminder-trigger {
   align-items: center;
   justify-content: center;
   border-radius: 14px;
+  background: #cd5cdd;
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(205, 92, 221, 0.25);
+}
+
+.message-composer .send-icon-button:hover:not(:disabled) {
+  background: #d56fe3;
+}
+
+.message-composer .send-icon-button:disabled {
+  background: rgba(205, 92, 221, 0.4);
+  box-shadow: none;
 }
 
 .message-composer .send-icon-button svg {

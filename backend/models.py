@@ -241,6 +241,8 @@ class MessageRead(MessageBase):
     media_url: Optional[str] = None
     is_deleted_for_all: bool = False
     deleted_for_all_at: Optional[datetime] = None
+    my_reaction: Optional[str] = None
+    reaction_counts: Dict[str, int] = Field(default_factory=dict)
 
 
 class MessageDeletion(SQLModel, table=True):
@@ -250,6 +252,19 @@ class MessageDeletion(SQLModel, table=True):
     deleted_for_all: bool = Field(default=False)
     deleted_at: datetime = Field(default_factory=datetime.utcnow)
     deleted_by_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+
+
+class MessageReaction(SQLModel, table=True):
+    message_id: Optional[int] = Field(
+        default=None, foreign_key="message.id", primary_key=True
+    )
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id", primary_key=True)
+    emoji: str = Field(default="")
+    reacted_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MessageReactRequest(SQLModel):
+    emoji: str = Field(default="")
 
 
 class IncomingMessagePayload(SQLModel):
