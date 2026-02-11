@@ -1055,9 +1055,7 @@ function showMessageActionMenu({ x, y, message }) {
   messageActionMenu.appendChild(selectButton);
 
   const canDeleteForAll =
-    message.direction === "agent" &&
-    !message.is_deleted_for_all &&
-    String(message.provider || "").toLowerCase() === "uazapi";
+    message.direction === "agent" && !message.is_deleted_for_all;
 
   if (canDeleteForAll) {
     const deleteForAll = document.createElement("button");
