@@ -10,6 +10,9 @@
 
     <title>Nexen.ai</title>
 
+    <link rel="icon" type="image/png" href="/static/assets/iconelogosemfundo.png" />
+    <link rel="apple-touch-icon" href="/static/assets/iconelogosemfundo.png" />
+
     <link rel="stylesheet" href="/static/styles.css" />
 
     <script type="module" src="https://unpkg.com/emoji-picker-element@^1/index.js?module"></script>
@@ -568,11 +571,11 @@
 
             <form id="newConversationForm" class="collapsed">
 
-              <label>Nome do devedor</label>
+              <label>Nome do contato</label>
 
               <input type="text" id="debtorName" placeholder="Ex: João" required />
 
-              <label>Telefone (com DDD)</label>
+              <label>Telefone</label>
 
               <input type="tel" id="debtorPhone" placeholder="5511999999999" required />
 
@@ -2074,6 +2077,84 @@
             Abrir original
 
           </a>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <div id="mediaComposerModal" class="media-composer-overlay hidden" aria-hidden="true">
+
+      <div class="media-composer-panel" role="dialog" aria-modal="true" aria-label="Prévia do anexo">
+
+        <div class="media-composer-header">
+
+          <h3 class="media-composer-title">Prévia</h3>
+
+          <button
+
+            type="button"
+
+            class="media-composer-close ghost small icon-only"
+
+            aria-label="Fechar"
+
+            title="Fechar"
+
+            data-media-composer-close
+
+          >
+
+            ×
+
+          </button>
+
+        </div>
+
+
+
+        <div class="media-composer-body">
+
+          <div class="media-composer-preview">
+
+            <img id="mediaComposerImage" alt="Prévia do anexo" />
+
+            <canvas id="mediaComposerCanvas" class="hidden" aria-hidden="true"></canvas>
+
+          </div>
+
+
+
+          <div class="media-composer-tools">
+
+            <button type="button" id="mediaComposerToggleDraw" class="ghost small" title="Desenhar">Desenhar</button>
+
+            <button type="button" id="mediaComposerClear" class="ghost small" title="Limpar desenho">Limpar</button>
+
+            <label class="ghost small media-composer-color" title="Cor do desenho">
+
+              <input type="color" id="mediaComposerColor" value="#cd5cdd" aria-label="Cor do desenho" />
+
+            </label>
+
+          </div>
+
+
+
+          <form id="mediaComposerForm" class="media-composer-form" autocomplete="off">
+
+            <input id="mediaComposerCaption" type="text" class="media-composer-caption" placeholder="Digite a mensagem" />
+
+            <div class="media-composer-actions">
+
+              <button type="button" class="ghost" data-media-composer-cancel>Cancelar</button>
+
+              <button type="submit" class="primary">Enviar</button>
+
+            </div>
+
+          </form>
 
         </div>
 

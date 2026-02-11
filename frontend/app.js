@@ -428,6 +428,15 @@ const imagePreviewImage = document.getElementById("imagePreviewImage");
 const imagePreviewCaption = document.getElementById("imagePreviewCaption");
 const imagePreviewDownload = document.getElementById("imagePreviewDownload");
 
+const mediaComposerModal = document.getElementById("mediaComposerModal");
+const mediaComposerImage = document.getElementById("mediaComposerImage");
+const mediaComposerCanvas = document.getElementById("mediaComposerCanvas");
+const mediaComposerForm = document.getElementById("mediaComposerForm");
+const mediaComposerCaption = document.getElementById("mediaComposerCaption");
+const mediaComposerToggleDraw = document.getElementById("mediaComposerToggleDraw");
+const mediaComposerClear = document.getElementById("mediaComposerClear");
+const mediaComposerColor = document.getElementById("mediaComposerColor");
+
 const MIC_ICON_SVG = "<svg class='toolbar-icon' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' focusable='false'><path d='M12 19v3'/><path d='M19 10v2a7 7 0 0 1-14 0v-2'/><rect x='9' y='2' width='6' height='13' rx='3'/></svg>";
 const STOP_ICON_SVG = "<svg class='toolbar-icon' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' focusable='false'><rect x='7' y='7' width='10' height='10' rx='2'/></svg>";
 
@@ -506,6 +515,17 @@ const state = {
   departments: [],
   selectedDepartmentId: null,
   selectedDepartmentUserIds: [],
+
+  mediaComposer: {
+    open: false,
+    file: null,
+    objectUrl: "",
+    drawEnabled: false,
+    hasEdits: false,
+    drawing: false,
+    lastX: 0,
+    lastY: 0,
+  },
 
   selectedConversation: null,
 
@@ -612,6 +632,157 @@ const state = {
   signMessagesEnabled: false,
 
 };
+
+function setMediaComposerCanvasBounds() {
+  if (!mediaComposerCanvas || !mediaComposerImage) return;
+  const width = Math.max(1, Math.round(mediaComposerImage.clientWidth || 1));
+  const height = Math.max(1, Math.round(mediaComposerImage.clientHeight || 1));
+  const left = Math.round(mediaComposerImage.offsetLeft || 0);
+  const top = Math.round(mediaComposerImage.offsetTop || 0);
+
+  mediaComposerCanvas.style.left = `${left}px`;
+  mediaComposerCanvas.style.top = `${top}px`;
+  mediaComposerCanvas.style.right = "auto";
+  mediaComposerCanvas.style.bottom = "auto";
+  mediaComposerCanvas.style.width = `${width}px`;
+  mediaComposerCanvas.style.height = `${height}px`;
+
+  if (mediaComposerCanvas.width !== width || mediaComposerCanvas.height !== height) {
+    mediaComposerCanvas.width = width;
+    mediaComposerCanvas.height = height;
+  }
+}
+
+function openMediaComposer(file, options = {}) {
+  if (!mediaComposerModal || !mediaComposerImage || !file) return;
+  const captionDefault = String(options.captionDefault ?? "").trim();
+
+  if (state.mediaComposer.objectUrl) {
+    URL.revokeObjectURL(state.mediaComposer.objectUrl);
+  }
+
+  state.mediaComposer.file = file;
+  state.mediaComposer.objectUrl = URL.createObjectURL(file);
+  state.mediaComposer.open = true;
+  state.mediaComposer.drawEnabled = false;
+  state.mediaComposer.hasEdits = false;
+  state.mediaComposer.drawing = false;
+
+  if (mediaComposerCaption) {
+    mediaComposerCaption.value = captionDefault;
+  }
+
+  if (mediaComposerCanvas) {
+    const ctx = mediaComposerCanvas.getContext("2d");
+    ctx?.clearRect(0, 0, mediaComposerCanvas.width, mediaComposerCanvas.height);
+    mediaComposerCanvas.classList.add("hidden");
+    mediaComposerCanvas.setAttribute("aria-hidden", "true");
+  }
+
+  mediaComposerImage.onload = () => {
+    setTimeout(() => {
+      setMediaComposerCanvasBounds();
+    }, 0);
+  };
+  mediaComposerImage.src = state.mediaComposer.objectUrl;
+
+  mediaComposerModal.classList.remove("hidden");
+  mediaComposerModal.setAttribute("aria-hidden", "false");
+  document.body?.classList.add("image-preview-open");
+}
+
+function closeMediaComposer() {
+  if (!mediaComposerModal) return;
+
+  mediaComposerModal.classList.add("hidden");
+  mediaComposerModal.setAttribute("aria-hidden", "true");
+  document.body?.classList.remove("image-preview-open");
+
+  if (mediaComposerImage) {
+    mediaComposerImage.onload = null;
+    mediaComposerImage.src = "";
+  }
+  if (mediaComposerCanvas) {
+    const ctx = mediaComposerCanvas.getContext("2d");
+    ctx?.clearRect(0, 0, mediaComposerCanvas.width, mediaComposerCanvas.height);
+    mediaComposerCanvas.classList.add("hidden");
+    mediaComposerCanvas.setAttribute("aria-hidden", "true");
+  }
+
+  if (state.mediaComposer.objectUrl) {
+    URL.revokeObjectURL(state.mediaComposer.objectUrl);
+  }
+  state.mediaComposer.file = null;
+  state.mediaComposer.objectUrl = "";
+  state.mediaComposer.open = false;
+  state.mediaComposer.drawEnabled = false;
+  state.mediaComposer.hasEdits = false;
+  state.mediaComposer.drawing = false;
+}
+
+function setMediaComposerDrawEnabled(enabled) {
+  state.mediaComposer.drawEnabled = Boolean(enabled);
+  if (!mediaComposerCanvas) return;
+  if (state.mediaComposer.drawEnabled) {
+    setMediaComposerCanvasBounds();
+    mediaComposerCanvas.classList.remove("hidden");
+    mediaComposerCanvas.setAttribute("aria-hidden", "false");
+  } else {
+    mediaComposerCanvas.classList.add("hidden");
+    mediaComposerCanvas.setAttribute("aria-hidden", "true");
+  }
+}
+
+function startMediaComposerDraw(x, y) {
+  if (!mediaComposerCanvas) return;
+  const ctx = mediaComposerCanvas.getContext("2d");
+  if (!ctx) return;
+  const color = String(mediaComposerColor?.value || "#cd5cdd");
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  state.mediaComposer.drawing = true;
+  state.mediaComposer.lastX = x;
+  state.mediaComposer.lastY = y;
+}
+
+function moveMediaComposerDraw(x, y) {
+  if (!state.mediaComposer.drawing || !mediaComposerCanvas) return;
+  const ctx = mediaComposerCanvas.getContext("2d");
+  if (!ctx) return;
+  ctx.beginPath();
+  ctx.moveTo(state.mediaComposer.lastX, state.mediaComposer.lastY);
+  ctx.lineTo(x, y);
+  ctx.stroke();
+  state.mediaComposer.lastX = x;
+  state.mediaComposer.lastY = y;
+  state.mediaComposer.hasEdits = true;
+}
+
+function endMediaComposerDraw() {
+  state.mediaComposer.drawing = false;
+}
+
+async function buildMediaComposerOutputFile() {
+  if (!state.mediaComposer.file || !mediaComposerImage) return null;
+  if (!state.mediaComposer.hasEdits || !mediaComposerCanvas) return state.mediaComposer.file;
+
+  const width = mediaComposerCanvas.width || 1;
+  const height = mediaComposerCanvas.height || 1;
+  const output = document.createElement("canvas");
+  output.width = width;
+  output.height = height;
+  const ctx = output.getContext("2d");
+  if (!ctx) return state.mediaComposer.file;
+
+  ctx.drawImage(mediaComposerImage, 0, 0, width, height);
+  ctx.drawImage(mediaComposerCanvas, 0, 0, width, height);
+
+  const blob = await new Promise((resolve) => output.toBlob(resolve, "image/png", 0.92));
+  if (!blob) return state.mediaComposer.file;
+  return new File([blob], "imagem.png", { type: "image/png" });
+}
 
 function getQuickRepliesStorageKey() {
   const orgId = state.organization?.id ?? "0";
@@ -2441,6 +2612,8 @@ function setupAudioControls() {
 
   mediaFileInput?.addEventListener("change", handleMediaFileSelected);
 
+  setupMediaComposerControls();
+
   if (!state.supportsRecording && audioRecordButton) {
 
     audioRecordButton.disabled = true;
@@ -2964,8 +3137,9 @@ function resetChatArea() {
   state.latestMessages = [];
   state.conversationNotes = [];
   stopPolling();
+  messageListEl.classList.add("has-empty-state");
   messageListEl.innerHTML =
-    '<p class="empty">Selecione uma conversa para continuar.</p>';
+    '<div class="chat-empty-state"><div class="chat-empty-image" aria-hidden="true"></div><p class="empty">Selecione uma conversa para continuar.</p></div>';
   setMessageFormAvailability(false);
   renderChatHeader();
   closeTagMenus();
@@ -3053,6 +3227,103 @@ async function fetchJson(url, options = {}) {
     return raw;
   }
 
+}
+
+function setupMediaComposerControls() {
+  if (!mediaComposerModal || !mediaComposerForm) return;
+
+  if (mediaComposerModal.dataset.bound === "1") return;
+  mediaComposerModal.dataset.bound = "1";
+
+  mediaComposerModal
+    .querySelectorAll("[data-media-composer-close]")
+    .forEach((btn) => btn.addEventListener("click", closeMediaComposer));
+  mediaComposerModal
+    .querySelectorAll("[data-media-composer-cancel]")
+    .forEach((btn) => btn.addEventListener("click", closeMediaComposer));
+
+  mediaComposerModal.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.id === "mediaComposerModal") {
+      closeMediaComposer();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (state.mediaComposer.open) {
+      closeMediaComposer();
+    }
+  });
+
+  mediaComposerToggleDraw?.addEventListener("click", () => {
+    setMediaComposerDrawEnabled(!state.mediaComposer.drawEnabled);
+    if (mediaComposerToggleDraw) {
+      mediaComposerToggleDraw.textContent = state.mediaComposer.drawEnabled ? "Parar" : "Desenhar";
+    }
+  });
+
+  mediaComposerClear?.addEventListener("click", () => {
+    if (!mediaComposerCanvas) return;
+    const ctx = mediaComposerCanvas.getContext("2d");
+    ctx?.clearRect(0, 0, mediaComposerCanvas.width, mediaComposerCanvas.height);
+    state.mediaComposer.hasEdits = false;
+  });
+
+  mediaComposerCanvas?.addEventListener("pointerdown", (event) => {
+    if (!state.mediaComposer.drawEnabled || !mediaComposerCanvas) return;
+    const rect = mediaComposerCanvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    startMediaComposerDraw(x, y);
+    mediaComposerCanvas.setPointerCapture?.(event.pointerId);
+  });
+  mediaComposerCanvas?.addEventListener("pointermove", (event) => {
+    if (!state.mediaComposer.drawEnabled || !state.mediaComposer.drawing || !mediaComposerCanvas) return;
+    const rect = mediaComposerCanvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    moveMediaComposerDraw(x, y);
+  });
+  mediaComposerCanvas?.addEventListener("pointerup", () => endMediaComposerDraw());
+  mediaComposerCanvas?.addEventListener("pointercancel", () => endMediaComposerDraw());
+  mediaComposerCanvas?.addEventListener("pointerleave", () => endMediaComposerDraw());
+
+  window.addEventListener("resize", () => {
+    if (!state.mediaComposer.open) return;
+    setTimeout(() => setMediaComposerCanvasBounds(), 0);
+  });
+
+  mediaComposerForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!state.selectedConversation || !state.mediaComposer.file) return;
+
+    const caption = String(mediaComposerCaption?.value || "").trim();
+    try {
+      const fileToSend = await buildMediaComposerOutputFile();
+      closeMediaComposer();
+      messageInput.value = "";
+      await sendMediaFile(fileToSend || state.mediaComposer.file, caption);
+    } catch (error) {
+      alert(error?.message || "Erro ao enviar imagem.");
+    }
+  });
+
+  messageInput?.addEventListener("paste", (event) => {
+    if (!state.selectedConversation) return;
+    const items = event.clipboardData?.items;
+    if (!items || !items.length) return;
+    for (const item of items) {
+      if (item.kind === "file" && item.type && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (!file) continue;
+        event.preventDefault();
+        openMediaComposer(file, { captionDefault: messageInput.value.trim() });
+        return;
+      }
+    }
+  });
 }
 
 
@@ -3806,8 +4077,11 @@ async function handleMediaFileSelected(event) {
   mediaFileInput.value = "";
 
   try {
-
-    await sendMediaFile(file);
+    if (mediaComposerModal && mediaComposerImage && String(file.type || "").startsWith("image/")) {
+      openMediaComposer(file, { captionDefault: messageInput.value.trim() });
+    } else {
+      await sendMediaFile(file);
+    }
 
   } catch (error) {
 
@@ -3819,11 +4093,12 @@ async function handleMediaFileSelected(event) {
 
 
 
-async function sendMediaFile(file) {
+async function sendMediaFile(file, captionOverride = null) {
 
   if (!state.selectedConversation || !file) return;
 
-  const caption = messageInput.value.trim();
+  const caption =
+    captionOverride === null ? messageInput.value.trim() : String(captionOverride || "").trim();
 
   const form = new FormData();
 
@@ -3871,7 +4146,9 @@ async function sendMediaFile(file) {
 
     await response.json();
 
-    messageInput.value = "";
+    if (captionOverride === null) {
+      messageInput.value = "";
+    }
 
     await loadConversations();
 
@@ -3892,6 +4169,7 @@ async function sendMediaFile(file) {
 
 
 function renderMessages(messages, options = {}) {
+  messageListEl.classList.remove("has-empty-state");
   const previousScrollTop = messageListEl.scrollTop;
   const previousScrollHeight = messageListEl.scrollHeight;
   const previousClientHeight = messageListEl.clientHeight;
