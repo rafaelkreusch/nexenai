@@ -10156,7 +10156,25 @@ function renderReminderList() {
 
     deleteButton.addEventListener("click", () => deleteReminder(reminder.id));
 
-    actions.append(doneButton, deleteButton);
+    const openButton = document.createElement("button");
+    openButton.className = "ghost";
+    openButton.textContent = "Abrir conversa";
+    openButton.addEventListener("click", async () => {
+      const conversationId =
+        findConversationIdForReminder(reminder) ||
+        (reminder.conversation_id ? Number(reminder.conversation_id) : null);
+      if (!conversationId) {
+        alert("Conversa não informada para este lembrete.");
+        return;
+      }
+      closeReminderModal(true);
+      handlePanel("conversations");
+      await selectConversation(conversationId);
+      const panel = document.getElementById("chatPanel");
+      if (panel) panel.scrollIntoView({ behavior: "smooth" });
+    });
+
+    actions.append(openButton, doneButton, deleteButton);
 
     item.append(header, title, actions);
 
