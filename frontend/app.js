@@ -343,6 +343,19 @@ const calendarNextWeekButton = document.getElementById("calendarNextWeek");
 const calendarTodayButton = document.getElementById("calendarTodayButton");
 const calendarWeekLabel = document.getElementById("calendarWeekLabel");
 const calendarNewEventButton = document.getElementById("calendarNewEventButton");
+const calendarEventModal = document.getElementById("calendarEventModal");
+const calendarEventModalTitle = document.getElementById("calendarEventModalTitle");
+const calendarEventModalSubtitle = document.getElementById("calendarEventModalSubtitle");
+const calendarEventModalContact = document.getElementById("calendarEventModalContact");
+const calendarEventModalOwner = document.getElementById("calendarEventModalOwner");
+const calendarEventModalNotes = document.getElementById("calendarEventModalNotes");
+const calendarEventModalConversation = document.getElementById("calendarEventModalConversation");
+const calendarEventModalComplete = document.getElementById("calendarEventModalComplete");
+const calendarEventModalCancel = document.getElementById("calendarEventModalCancel");
+const calendarStatToday = document.getElementById("calendarStatToday");
+const calendarStatWeek = document.getElementById("calendarStatWeek");
+const calendarStatMonth = document.getElementById("calendarStatMonth");
+const calendarStatPending = document.getElementById("calendarStatPending");
 const bulkMappingSection = document.getElementById("bulkMappingSection");
 
 const bulkMappingFileLabel = document.getElementById("bulkMappingFile");
@@ -573,6 +586,7 @@ const state = {
   },
   calendarWeekOffset: 0,
   calendarEvents: [],
+  calendarEventPreview: null,
   messageSelectionMode: false,
   selectedMessageIds: [],
   messageSearchQuery: "",
@@ -3415,6 +3429,18 @@ function formatWeekRangeLabel(dates) {
   return `${first} · ${last}`.replaceAll(".", "");
 }
 
+function formatBrazilDate(dateInput, includeTime = true) {
+  if (!dateInput) return "";
+  const date = dateInput instanceof Date ? dateInput : parseUtcDate(dateInput);
+  if (!date) return "";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return includeTime ? `${day}/${month}/${year} ${hours}:${minutes}` : `${day}/${month}/${year}`;
+}
+
 function formatLocalDateKey(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -5143,7 +5169,61 @@ function renderChatReminders() {
 
     timing.textContent = formatTimestamp(dueDate || reminder.due_at);
 
-    pill.append(title, timing);
+    const actions = document.createElement("div");
+
+    actions.className = "reminder-actions-pill";
+
+    const completeBtn = document.createElement("button");
+
+    completeBtn.type = "button";
+
+    completeBtn.className = "reminder-action-pill complete";
+
+    completeBtn.innerHTML = `<span aria-hidden="true" class="icon">✓</span>`;
+
+    completeBtn.addEventListener("click", async (event) => {
+
+      event.preventDefault();
+
+      event.stopPropagation();
+
+      await markReminderDone(reminder.id);
+
+    });
+
+    const cancelBtn = document.createElement("button");
+
+    cancelBtn.type = "button";
+
+    cancelBtn.className = "reminder-action-pill cancel";
+
+    cancelBtn.innerHTML = `<span aria-hidden="true" class="icon">✕</span>`;
+
+    cancelBtn.addEventListener("click", async (event) => {
+
+      event.stopPropagation();
+
+      const confirmCancel = confirm("Cancelar esta atividade?");
+
+      if (!confirmCancel) return;
+
+      try {
+
+        await fetchJson(`/api/reminders/${reminder.id}`, { method: "DELETE" });
+
+        await loadReminders();
+
+      } catch (error) {
+
+        alert(error.message);
+
+      }
+
+    });
+
+    actions.append(completeBtn, cancelBtn);
+
+    pill.append(title, timing, actions);
 
     chatRemindersEl.appendChild(pill);
 
@@ -7013,6 +7093,55 @@ if (calendarNewEventButton) {
   });
 }
 
+if (calendarEventModal) {
+  calendarEventModal.addEventListener("click", (event) => {
+    if (event.target === calendarEventModal || event.target.closest("[data-calendar-event-close]")) {
+      closeCalendarEventModal();
+    }
+  });
+}
+
+if (calendarEventModalConversation) {
+  calendarEventModalConversation.addEventListener("click", async () => {
+    if (!state.calendarEventPreview) return;
+    const conversationId =
+      findConversationIdForReminder(state.calendarEventPreview) ||
+      (state.calendarEventPreview.conversation_id
+        ? Number(state.calendarEventPreview.conversation_id)
+        : null);
+    if (!conversationId) return;
+    closeCalendarEventModal();
+    handlePanel("conversations");
+    await selectConversation(conversationId);
+    const panel = document.getElementById("chatPanel");
+    if (panel) panel.scrollIntoView({ behavior: "smooth" });
+  });
+}
+
+if (calendarEventModalComplete) {
+  calendarEventModalComplete.addEventListener("click", async () => {
+    if (!state.calendarEventPreview?.reminder_id) return;
+    await markReminderDone(state.calendarEventPreview.reminder_id);
+  });
+}
+
+if (calendarEventModalCancel) {
+  calendarEventModalCancel.addEventListener("click", async () => {
+    if (!state.calendarEventPreview?.reminder_id) return;
+    const confirmCancel = confirm("Cancelar esta atividade?");
+    if (!confirmCancel) return;
+    try {
+      await fetchJson(`/api/reminders/${state.calendarEventPreview.reminder_id}`, {
+        method: "DELETE",
+      });
+      await loadReminders();
+      closeCalendarEventModal();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+}
+
 function openBulkPanel() {
   closeDashboardPanel();
   if (!bulkPanel || !workspace) return;
@@ -7429,49 +7558,131 @@ function renderCalendar() {
   if (calendarWeekLabel) {
     calendarWeekLabel.textContent = formatWeekRangeLabel(weekDates);
   }
+  updateCalendarStats(weekDates);
+  const events = Array.isArray(state.calendarEvents) ? state.calendarEvents : [];
+
+  const startHour = 7;
+  const endHour = 19;
+  const hourHeight = 56;
+  const totalMinutes = (endHour - startHour) * 60;
+  const gridHeightPx = (totalMinutes / 60) * hourHeight;
+
+  const weekdayFormatter = new Intl.DateTimeFormat("pt-BR", { weekday: "short" });
+  const dayFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" });
+
   calendarGrid.innerHTML = "";
+  calendarGrid.classList.add("calendar-timegrid-host");
+
+  const grid = document.createElement("div");
+  grid.className = "calendar-timegrid";
+  grid.style.setProperty("--calendar-hour-height", `${hourHeight}px`);
+  grid.style.setProperty("--calendar-start-hour", String(startHour));
+  grid.style.setProperty("--calendar-end-hour", String(endHour));
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "calendar-timegrid-header";
+
+  const corner = document.createElement("div");
+  corner.className = "timegrid-corner";
+  corner.textContent = "Hora";
+  headerRow.appendChild(corner);
+
   weekDates.forEach((date) => {
-    const column = document.createElement("article");
-    column.className = "calendar-day";
     const key = formatLocalDateKey(date);
     const isToday = key === formatLocalDateKey(new Date());
-    if (isToday) {
-      column.classList.add("today");
-    }
-    const header = document.createElement("header");
-    const weekdayFormatter = new Intl.DateTimeFormat("pt-BR", {
-      weekday: "short",
-    });
-    const dayFormatter = new Intl.DateTimeFormat("pt-BR", {
-      day: "2-digit",
-      month: "short",
-    });
-    header.innerHTML = `<strong>${weekdayFormatter.format(date).replace(".", "")}</strong><span>${dayFormatter
+    const cell = document.createElement("div");
+    cell.className = `timegrid-dayheader${isToday ? " today" : ""}`;
+    cell.innerHTML = `<strong>${weekdayFormatter.format(date).replace(".", "")}</strong><span>${dayFormatter
       .format(date)
       .replace(".", "")}</span>`;
-    column.append(header);
-    const events = state.calendarEvents
+    headerRow.appendChild(cell);
+  });
+
+  const body = document.createElement("div");
+  body.className = "calendar-timegrid-body";
+
+  const timeCol = document.createElement("div");
+  timeCol.className = "timegrid-timecol";
+  timeCol.style.height = `${gridHeightPx}px`;
+  for (let hour = startHour; hour < endHour; hour += 1) {
+    const label = document.createElement("div");
+    label.className = "timegrid-time";
+    label.textContent = `${String(hour).padStart(2, "0")}:00`;
+    timeCol.appendChild(label);
+  }
+  body.appendChild(timeCol);
+
+  weekDates.forEach((date) => {
+    const key = formatLocalDateKey(date);
+    const isToday = key === formatLocalDateKey(new Date());
+    const dayCol = document.createElement("div");
+    dayCol.className = `timegrid-daycol${isToday ? " today" : ""}`;
+    dayCol.dataset.date = key;
+
+    const dayInner = document.createElement("div");
+    dayInner.className = "timegrid-daycol-inner";
+    dayInner.style.height = `${gridHeightPx}px`;
+
+    const dayEvents = events
       .filter((event) => event.date === key)
       .sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
-    if (!events.length) {
-      const empty = document.createElement("small");
-      empty.className = "muted";
-      empty.textContent = "Sem eventos";
-      column.append(empty);
-    } else {
-      events.forEach((event) => {
-        const card = document.createElement("div");
-        card.className = "calendar-event";
+
+      dayEvents.forEach((event, index) => {
+        const block = document.createElement("div");
+        block.className = "timegrid-event";
+        if (event.is_done) {
+          block.classList.add("is-done");
+        }
+        block.tabIndex = 0;
+        block.setAttribute("role", "button");
         const title = document.createElement("strong");
         title.textContent = event.title || "Compromisso";
         const meta = document.createElement("small");
         meta.textContent = `${event.start_time || "--"} · ${event.owner || "Equipe"}`;
-        card.append(title, meta);
-        column.append(card);
+        block.append(title, meta);
+
+        const [h, m] = String(event.start_time || "").split(":").map((value) => Number(value));
+      const minutesFromStart = Math.max(
+        0,
+        Math.min(totalMinutes - 1, ((h || 0) - startHour) * 60 + (m || 0))
+      );
+      const top = (minutesFromStart / 60) * hourHeight;
+
+      const durationMinutes = Number.isFinite(event.duration_minutes) ? event.duration_minutes : 60;
+      const height = Math.max(34, (Math.min(durationMinutes, totalMinutes) / 60) * hourHeight);
+
+      block.style.top = `${top}px`;
+      block.style.height = `${height}px`;
+
+      const overlapOffset = (index % 3) * 6;
+      block.style.left = `${8 + overlapOffset}px`;
+      block.style.right = `${8 + overlapOffset}px`;
+
+      const eventDetails = {
+        ...event,
+        description: event.description || event.notes || "",
+      };
+
+      block.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openCalendarEventModal(eventDetails);
       });
-    }
-    calendarGrid.appendChild(column);
+      block.addEventListener("keydown", (keyboardEvent) => {
+        if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+          keyboardEvent.preventDefault();
+          openCalendarEventModal(eventDetails);
+        }
+      });
+
+      dayInner.appendChild(block);
+    });
+
+      dayCol.appendChild(dayInner);
+    body.appendChild(dayCol);
   });
+
+  grid.append(headerRow, body);
+  calendarGrid.appendChild(grid);
   if (calendarUpcomingList) {
     const upcoming = state.calendarEvents
       .map((event) => ({ ...event, when: parseCalendarDate(event) }))
@@ -8923,6 +9134,33 @@ function getUserLabel(userId) {
 
 }
 
+function updateCalendarStats(weekDates) {
+  if (!Array.isArray(weekDates) || !weekDates.length) return;
+
+  const todayKey = formatLocalDateKey(new Date());
+  const weekKeys = weekDates.map((date) => formatLocalDateKey(date));
+  const first = weekDates[0];
+  const refYear = first.getFullYear();
+  const refMonth = first.getMonth();
+
+  const events = Array.isArray(state.calendarEvents) ? state.calendarEvents : [];
+  const todayCount = events.filter((event) => event.date === todayKey).length;
+  const weekCount = events.filter((event) => weekKeys.includes(event.date)).length;
+  const monthCount = events.filter((event) => {
+    const when = parseCalendarDate(event);
+    return when && when.getFullYear() === refYear && when.getMonth() === refMonth;
+  }).length;
+
+  const pendingCount = Array.isArray(state.reminders)
+    ? state.reminders.filter((reminder) => !reminder.is_done).length
+    : 0;
+
+  if (calendarStatToday) calendarStatToday.textContent = String(todayCount);
+  if (calendarStatWeek) calendarStatWeek.textContent = String(weekCount);
+  if (calendarStatMonth) calendarStatMonth.textContent = String(monthCount);
+  if (calendarStatPending) calendarStatPending.textContent = String(pendingCount);
+}
+
 function getUserDepartmentLabel(userId) {
   if (!userId) return "";
   const user = state.users.find((u) => u.id === userId);
@@ -9210,6 +9448,93 @@ async function loadDepartments(options = {}) {
       alert("Não foi possível carregar os departamentos.");
     }
   }
+}
+
+function openCalendarEventModal(eventData) {
+  if (!calendarEventModal) return;
+  const { title, date, start_time, owner, description, conversation_id } = eventData || {};
+  const dateLabel = formatBrazilDate(`${date}T${start_time || "00:00"}`);
+  calendarEventModalTitle.textContent = title || "Atividade";
+  calendarEventModalSubtitle.textContent = dateLabel;
+  const contactLabel = eventData?.contactName || eventData?.contactPhone || "Contato não informado";
+  calendarEventModalContact.textContent = `Contato: ${contactLabel}`;
+  calendarEventModalOwner.textContent = eventData?.creatorName
+    ? `Responsável: ${eventData.creatorName}`
+    : owner
+      ? `Responsável: ${owner}`
+      : "Responsável: Equipe";
+  calendarEventModalNotes.textContent = description || "Sem descrição adicional.";
+  state.calendarEventPreview = eventData;
+  calendarEventModal.classList.remove("hidden");
+  calendarEventModal.setAttribute("aria-hidden", "false");
+}
+
+function closeCalendarEventModal() {
+  if (!calendarEventModal) return;
+  state.calendarEventPreview = null;
+  calendarEventModal.classList.add("hidden");
+  calendarEventModal.setAttribute("aria-hidden", "true");
+}
+
+function findConversationIdForReminder(eventData) {
+  if (eventData.conversation_id) {
+    return Number(eventData.conversation_id);
+  }
+  const targetPhone = normalizePhoneForCompare(eventData.contactPhone);
+  if (!targetPhone) return null;
+  const conversation = (state.conversations || []).find((conv) => {
+    const normalized = normalizePhoneForCompare(conv.debtor_phone);
+    return normalized && normalized === targetPhone;
+  });
+  return conversation ? conversation.id : null;
+}
+
+async function syncCalendarEventsFromReminders(remindersInput) {
+  const reminders = Array.isArray(remindersInput)
+    ? remindersInput
+    : Array.isArray(state.reminders)
+      ? state.reminders
+      : [];
+  const events = [];
+  for (const reminder of reminders) {
+    const due = parseUtcDate(reminder.due_at);
+    if (!due) continue;
+    const dateKey = formatLocalDateKey(due);
+    const start_time = `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
+    let conversation = null;
+    if (reminder.conversation_id) {
+      conversation = state.conversations.find((conv) => conv.id === reminder.conversation_id);
+      if (!conversation) {
+        try {
+          conversation = await fetchJson(`/api/conversations/${reminder.conversation_id}`);
+          state.conversations.push(conversation);
+        } catch (error) {
+          conversation = null;
+        }
+      }
+    }
+    const contactName = conversation?.debtor_name || conversation?.debtor_phone || "Contato não informado";
+    const contactPhone = conversation?.debtor_phone || reminder.conversation_phone || "";
+    const responsibleLabel = getUserLabel(reminder.owner_user_id) || "Equipe";
+    const creatorLabel = getUserLabel(reminder.created_by_user_id) || responsibleLabel;
+    const event = {
+      id: `reminder_${reminder.id}`,
+      date: dateKey,
+      start_time,
+      duration_minutes: 60,
+      title: reminder.title || "Lembrete",
+      owner: responsibleLabel,
+      creatorName: creatorLabel,
+      contactName,
+      contactPhone,
+      is_done: Boolean(reminder.is_done),
+      source: "reminder",
+      reminder_id: reminder.id,
+      conversation_id: reminder.conversation_id,
+    };
+    events.push(event);
+  }
+  state.calendarEvents = events;
 }
 
 async function selectDepartment(departmentId) {
@@ -9668,11 +9993,33 @@ async function loadReminders() {
 
   try {
 
-    state.reminders = await fetchJson("/api/reminders");
+    try {
+      state.reminders = await fetchJson("/api/reminders?status=all");
+    } catch (error) {
+      console.warn("Falha ao carregar lembretes completos, usando apenas pendentes.", error);
+      const pending = (await fetchJson("/api/reminders")) || [];
+      try {
+        const done = (await fetchJson("/api/reminders?status=done")) || [];
+        const seen = new Set();
+        state.reminders = [...pending, ...done].filter((reminder) => {
+          const key = String(reminder?.id ?? "");
+          if (!key) return false;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      } catch (doneError) {
+        state.reminders = pending;
+      }
+    }
+    await syncCalendarEventsFromReminders(state.reminders);
     updateReminderBadge();
     renderReminderList();
     renderChatReminders();
     updateDashboard();
+    if (workspace?.classList.contains("calendar-active")) {
+      renderCalendar();
+    }
   } catch (error) {
     console.error("Erro ao carregar lembretes", error);
   }
@@ -9735,7 +10082,9 @@ function renderReminderList() {
 
   reminderListEl.innerHTML = "";
 
-  if (!state.reminders.length) {
+  const pending = (state.reminders || []).filter((reminder) => !reminder.is_done);
+
+  if (!pending.length) {
 
     const empty = document.createElement("p");
 
@@ -9749,7 +10098,7 @@ function renderReminderList() {
 
   }
 
-  const sorted = [...state.reminders].sort(
+  const sorted = [...pending].sort(
 
     (a, b) =>
 
