@@ -182,6 +182,14 @@ const tagFilterButton = document.getElementById("tagFilterButton");
 const tagFilterMenu = document.getElementById("tagFilterMenu");
 const conversationFilterButton = document.getElementById("conversationFilterButton");
 const conversationFilterMenu = document.getElementById("conversationFilterMenu");
+const conversationAdminFilters = document.getElementById("conversationAdminFilters");
+const filterOwnerSearch = document.getElementById("filterOwnerSearch");
+const filterOwnerOptions = document.getElementById("filterOwnerOptions");
+const filterOwnerChips = document.getElementById("filterOwnerChips");
+const filterDepartmentSearch = document.getElementById("filterDepartmentSearch");
+const filterDepartmentOptions = document.getElementById("filterDepartmentOptions");
+const filterDepartmentChips = document.getElementById("filterDepartmentChips");
+const conversationFilterClear = document.getElementById("conversationFilterClear");
 
 const tagMenuToggle = document.getElementById("tagMenuToggle");
 
@@ -555,6 +563,11 @@ const state = {
   searchQuery: "",
 
   tagFilterId: null,
+
+  conversationOwnerFilterIds: [],
+  conversationDepartmentFilterIds: [],
+  conversationOwnerQuery: "",
+  conversationDepartmentQuery: "",
 
   session: null,
 
@@ -3670,6 +3683,262 @@ function updateScopeControls() {
 
 
 
+function isAdminUser() {
+  return Boolean(state.user?.is_admin);
+}
+
+function clearConversationAdminFilters(options = {}) {
+  const { rerender = true } = options;
+
+  state.conversationOwnerFilterIds = [];
+  state.conversationDepartmentFilterIds = [];
+  state.conversationOwnerQuery = "";
+  state.conversationDepartmentQuery = "";
+
+  if (filterOwnerSearch) filterOwnerSearch.value = "";
+  if (filterDepartmentSearch) filterDepartmentSearch.value = "";
+
+  if (filterOwnerOptions) {
+    filterOwnerOptions.innerHTML = "";
+    filterOwnerOptions.classList.add("hidden");
+  }
+
+  if (filterDepartmentOptions) {
+    filterDepartmentOptions.innerHTML = "";
+    filterDepartmentOptions.classList.add("hidden");
+  }
+
+  if (filterOwnerChips) filterOwnerChips.innerHTML = "";
+  if (filterDepartmentChips) filterDepartmentChips.innerHTML = "";
+
+  if (rerender) {
+    renderConversations(state.conversations);
+  }
+}
+
+function updateConversationAdminFiltersVisibility() {
+  if (!conversationAdminFilters) return;
+
+  const isAdmin = isAdminUser();
+  conversationAdminFilters.classList.toggle("hidden", !isAdmin);
+
+  if (!isAdmin) {
+    clearConversationAdminFilters({ rerender: false });
+  }
+}
+
+function getUserDisplayLabel(user) {
+  if (!user) return "";
+  if (user.full_name) return user.full_name;
+  if (user.username) return `@${user.username}`;
+  return "";
+}
+
+function getDepartmentDisplayLabel(dept) {
+  if (!dept) return "";
+  return dept.name || String(dept.id || "");
+}
+
+function renderConversationOwnerChips() {
+  if (!filterOwnerChips) return;
+
+  filterOwnerChips.innerHTML = "";
+  const selectedIds = Array.isArray(state.conversationOwnerFilterIds) ? state.conversationOwnerFilterIds : [];
+
+  selectedIds.forEach((rawId) => {
+    const userId = Number(rawId);
+    const user = (state.users || []).find((u) => u.id === userId);
+    const label = user ? getUserDisplayLabel(user) : `ID ${rawId}`;
+
+    const chip = document.createElement("span");
+    chip.className = "filter-chip";
+    chip.textContent = label;
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Remover ${label}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      state.conversationOwnerFilterIds = (state.conversationOwnerFilterIds || []).filter((id) => Number(id) !== userId);
+      renderConversationOwnerChips();
+      renderConversationOwnerOptions();
+      renderConversations(state.conversations);
+    });
+
+    chip.appendChild(remove);
+    filterOwnerChips.appendChild(chip);
+  });
+}
+
+function renderConversationDepartmentChips() {
+  if (!filterDepartmentChips) return;
+
+  filterDepartmentChips.innerHTML = "";
+  const selectedIds = Array.isArray(state.conversationDepartmentFilterIds) ? state.conversationDepartmentFilterIds : [];
+
+  selectedIds.forEach((rawId) => {
+    const deptId = Number(rawId);
+    const dept = (state.departments || []).find((d) => Number(d.id) === deptId);
+    const label = dept ? getDepartmentDisplayLabel(dept) : `Departamento ${rawId}`;
+
+    const chip = document.createElement("span");
+    chip.className = "filter-chip";
+    chip.textContent = label;
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Remover ${label}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      state.conversationDepartmentFilterIds = (state.conversationDepartmentFilterIds || []).filter(
+        (id) => Number(id) !== deptId
+      );
+      renderConversationDepartmentChips();
+      renderConversationDepartmentOptions();
+      renderConversations(state.conversations);
+    });
+
+    chip.appendChild(remove);
+    filterDepartmentChips.appendChild(chip);
+  });
+}
+
+function renderConversationOwnerOptions() {
+  if (!filterOwnerOptions || !filterOwnerSearch) return;
+
+  const query = (state.conversationOwnerQuery || "").trim().toLowerCase();
+  filterOwnerOptions.innerHTML = "";
+
+  if (!isAdminUser() || query.length < 1) {
+    filterOwnerOptions.classList.add("hidden");
+    return;
+  }
+
+  const selected = new Set((state.conversationOwnerFilterIds || []).map((id) => Number(id)));
+
+  const candidates = (state.users || [])
+    .filter((user) => user && !selected.has(user.id))
+    .map((user) => {
+      const label = getUserDisplayLabel(user);
+      const secondary = user.username ? `@${user.username}` : "";
+      const haystack = `${label} ${secondary}`.toLowerCase();
+      return { user, label, secondary, haystack };
+    })
+    .filter((item) => item.haystack.includes(query))
+    .slice(0, 8);
+
+  if (!candidates.length) {
+    filterOwnerOptions.classList.add("hidden");
+    return;
+  }
+
+  candidates.forEach(({ user, label, secondary }) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "filter-option";
+    option.innerHTML = `<span>${escapeHtml(label)}</span>${
+      secondary ? `<span class="meta">${escapeHtml(secondary)}</span>` : ""
+    }`;
+
+    option.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const set = new Set((state.conversationOwnerFilterIds || []).map((id) => Number(id)));
+      set.add(user.id);
+      state.conversationOwnerFilterIds = Array.from(set);
+      state.conversationOwnerQuery = "";
+      filterOwnerSearch.value = "";
+      renderConversationOwnerChips();
+      renderConversationOwnerOptions();
+      renderConversations(state.conversations);
+    });
+
+    filterOwnerOptions.appendChild(option);
+  });
+
+  filterOwnerOptions.classList.remove("hidden");
+}
+
+function renderConversationDepartmentOptions() {
+  if (!filterDepartmentOptions || !filterDepartmentSearch) return;
+
+  const query = (state.conversationDepartmentQuery || "").trim().toLowerCase();
+  filterDepartmentOptions.innerHTML = "";
+
+  if (!isAdminUser() || query.length < 1) {
+    filterDepartmentOptions.classList.add("hidden");
+    return;
+  }
+
+  const selected = new Set((state.conversationDepartmentFilterIds || []).map((id) => Number(id)));
+
+  const candidates = (state.departments || [])
+    .filter((dept) => dept && !selected.has(Number(dept.id)))
+    .map((dept) => {
+      const label = getDepartmentDisplayLabel(dept);
+      const haystack = `${label}`.toLowerCase();
+      return { dept, label, haystack };
+    })
+    .filter((item) => item.haystack.includes(query))
+    .slice(0, 8);
+
+  if (!candidates.length) {
+    filterDepartmentOptions.classList.add("hidden");
+    return;
+  }
+
+  candidates.forEach(({ dept, label }) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "filter-option";
+    option.textContent = label;
+
+    option.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const set = new Set((state.conversationDepartmentFilterIds || []).map((id) => Number(id)));
+      set.add(Number(dept.id));
+      state.conversationDepartmentFilterIds = Array.from(set);
+      state.conversationDepartmentQuery = "";
+      filterDepartmentSearch.value = "";
+      renderConversationDepartmentChips();
+      renderConversationDepartmentOptions();
+      renderConversations(state.conversations);
+    });
+
+    filterDepartmentOptions.appendChild(option);
+  });
+
+  filterDepartmentOptions.classList.remove("hidden");
+}
+
+function userMatchesDepartmentFilter(user, selectedDeptIds) {
+  if (!user) return false;
+  const selected = Array.isArray(selectedDeptIds) ? selectedDeptIds : [];
+  if (!selected.length) return true;
+
+  const userDepts = Array.isArray(user.departments) ? user.departments : [];
+  if (!userDepts.length) return false;
+
+  for (const rawId of selected) {
+    const deptId = Number(rawId);
+    if (userDepts.includes(deptId) || userDepts.includes(String(deptId))) {
+      return true;
+    }
+    const dept = (state.departments || []).find((d) => Number(d.id) === deptId);
+    const deptName = dept?.name;
+    if (deptName && userDepts.includes(deptName)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function renderConversations(conversations = state.conversations) {
 
   conversationListEl.innerHTML = "";
@@ -3681,6 +3950,10 @@ function renderConversations(conversations = state.conversations) {
   const search = state.searchQuery.trim().toLowerCase();
 
   const tagFilterId = state.tagFilterId;
+
+  const ownerFilterIds = isAdminUser() ? (state.conversationOwnerFilterIds || []) : [];
+  const departmentFilterIds = isAdminUser() ? (state.conversationDepartmentFilterIds || []) : [];
+  const ownerFilterSet = new Set(ownerFilterIds.map((id) => Number(id)));
 
   const activeType = state.activeConversationType === "groups" ? "groups" : "chats";
 
@@ -3720,7 +3993,19 @@ function renderConversations(conversations = state.conversations) {
 
       activeType === "groups" ? isGroupConversation(conversation) : !isGroupConversation(conversation);
 
-    return matchesSearch && matchesTag && matchesType;
+    const matchesOwner =
+      !ownerFilterSet.size ||
+      (conversation.owner_user_id && ownerFilterSet.has(Number(conversation.owner_user_id)));
+
+    const matchesDepartment =
+      !departmentFilterIds.length ||
+      (conversation.owner_user_id &&
+        userMatchesDepartmentFilter(
+          (state.users || []).find((u) => u.id === Number(conversation.owner_user_id)),
+          departmentFilterIds
+        ));
+
+    return matchesSearch && matchesTag && matchesType && matchesOwner && matchesDepartment;
 
   });
 
@@ -6260,13 +6545,117 @@ function updateIntegrationStatus(status) {
 
 }
 
+function hideConversationFilterOptions() {
+  filterOwnerOptions?.classList.add("hidden");
+  filterDepartmentOptions?.classList.add("hidden");
+}
+
+function positionConversationFilterMenu() {
+  if (!conversationFilterButton || !conversationFilterMenu) return;
+  if (conversationFilterMenu.classList.contains("hidden")) return;
+
+  conversationFilterMenu.style.position = "fixed";
+  conversationFilterMenu.style.zIndex = "9999";
+
+  const gap = 10;
+  const buttonRect = conversationFilterButton.getBoundingClientRect();
+  const menuRect = conversationFilterMenu.getBoundingClientRect();
+
+  let left = buttonRect.left;
+  if (left + menuRect.width > window.innerWidth - gap) {
+    left = window.innerWidth - gap - menuRect.width;
+  }
+  left = Math.max(gap, left);
+
+  let top = buttonRect.bottom + gap;
+  if (top + menuRect.height > window.innerHeight - gap) {
+    top = buttonRect.top - gap - menuRect.height;
+  }
+  top = Math.max(gap, Math.min(top, window.innerHeight - gap - menuRect.height));
+
+  conversationFilterMenu.style.left = `${Math.round(left)}px`;
+  conversationFilterMenu.style.top = `${Math.round(top)}px`;
+}
+
+async function ensureConversationFilterDataLoaded() {
+  if (!isAdminUser()) return;
+
+  const tasks = [];
+  if (!Array.isArray(state.users) || !state.users.length) {
+    tasks.push(loadUsers());
+  }
+  if (!Array.isArray(state.departments) || !state.departments.length) {
+    tasks.push(loadDepartments({ silent: true }));
+  }
+
+  if (!tasks.length) return;
+  await Promise.allSettled(tasks);
+}
+
+async function prepareConversationFilterMenu() {
+  updateConversationAdminFiltersVisibility();
+
+  if (!isAdminUser()) {
+    hideConversationFilterOptions();
+    return;
+  }
+
+  await ensureConversationFilterDataLoaded();
+  renderConversationOwnerChips();
+  renderConversationDepartmentChips();
+  renderConversationOwnerOptions();
+  renderConversationDepartmentOptions();
+}
+
 if (conversationFilterButton && conversationFilterMenu) {
-  conversationFilterButton.addEventListener("click", () => {
+  conversationFilterButton.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
     const willOpen = conversationFilterMenu.classList.contains("hidden");
     conversationFilterButton.setAttribute("aria-expanded", String(willOpen));
     conversationFilterMenu.classList.toggle("hidden", !willOpen);
+
+    if (willOpen) {
+      await prepareConversationFilterMenu();
+      requestAnimationFrame(() => {
+        positionConversationFilterMenu();
+        requestAnimationFrame(positionConversationFilterMenu);
+      });
+    } else {
+      hideConversationFilterOptions();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (conversationFilterMenu.classList.contains("hidden")) return;
+    positionConversationFilterMenu();
   });
 }
+
+filterOwnerSearch?.addEventListener("input", (event) => {
+  state.conversationOwnerQuery = event.target.value || "";
+  renderConversationOwnerOptions();
+});
+
+filterOwnerSearch?.addEventListener("focus", () => {
+  renderConversationOwnerOptions();
+});
+
+filterDepartmentSearch?.addEventListener("input", (event) => {
+  state.conversationDepartmentQuery = event.target.value || "";
+  renderConversationDepartmentOptions();
+});
+
+filterDepartmentSearch?.addEventListener("focus", () => {
+  renderConversationDepartmentOptions();
+});
+
+conversationFilterClear?.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  clearConversationAdminFilters();
+});
 
 
 
@@ -6608,6 +6997,7 @@ function updateUserInfo() {
 
   renderUsers();
   updateScopeControls();
+  updateConversationAdminFiltersVisibility();
   updateNoteButtonState();
 }
 

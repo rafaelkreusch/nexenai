@@ -539,9 +539,9 @@
                 <span class="sr-only">Filtro</span>
               </button>
 
-              <div id="conversationFilterMenu" class="tag-menu hidden" role="dialog" aria-label="Filtros">
+              <div id="conversationFilterMenu" class="tag-menu filter-menu hidden" role="dialog" aria-label="Filtros">
                 <div class="filter-menu-section">
-                  <div class="filter-menu-title">Escopo</div>
+                  <div class="filter-menu-title">Filtro</div>
                   <div class="scope-tabs scope-tabs--inline" id="scopeTabs" role="group" aria-label="Escopo das conversas">
                     <button type="button" class="scope-chip active" data-scope="mine" id="scopeMineButton">
                       Somente eu
@@ -553,8 +553,36 @@
                   </div>
                 </div>
 
+                <div class="filter-menu-section filter-admin-only hidden" id="conversationAdminFilters">
+                  <div class="filter-menu-title">Pessoa</div>
+                  <div class="filter-select">
+                    <input
+                      type="search"
+                      id="filterOwnerSearch"
+                      placeholder="Buscar por pessoa"
+                      autocomplete="off"
+                    />
+                    <div id="filterOwnerOptions" class="filter-options hidden" role="listbox" aria-label="Pessoas"></div>
+                    <div id="filterOwnerChips" class="filter-chips" aria-label="Pessoas selecionadas"></div>
+                  </div>
+
+                  <div class="filter-menu-title filter-menu-title--spaced">Departamento</div>
+                  <div class="filter-select">
+                    <input
+                      type="search"
+                      id="filterDepartmentSearch"
+                      placeholder="Buscar por departamento"
+                      autocomplete="off"
+                    />
+                    <div id="filterDepartmentOptions" class="filter-options hidden" role="listbox" aria-label="Departamentos"></div>
+                    <div id="filterDepartmentChips" class="filter-chips" aria-label="Departamentos selecionados"></div>
+                  </div>
+
+                  <button type="button" id="conversationFilterClear" class="ghost small filter-clear">Limpar filtros</button>
+                </div>
+
                 <div class="filter-menu-hint muted">
-                  Mais filtros serão adicionados aqui.
+
                 </div>
               </div>
             </div>
