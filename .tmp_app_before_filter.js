@@ -657,7 +657,6 @@ const state = {
 
   imagePreviewOpen: false,
   signMessagesEnabled: false,
-  sendingMessage: false,
 
 };
 
@@ -822,104 +821,6 @@ function getSignMessagesStorageKey() {
   const orgId = state.organization?.id ?? "0";
   const userId = state.user?.id ?? "0";
   return `signMessages:${orgId}:${userId}`;
-}
-
-function getConversationDraftStorageKey(conversationId) {
-  const orgId = state.organization?.id ?? "0";
-  const userId = state.user?.id ?? "0";
-  return `draft:${orgId}:${userId}:${conversationId}`;
-}
-
-function loadConversationDraft(conversationId) {
-  if (!conversationId) return "";
-  try {
-    const raw = localStorage.getItem(getConversationDraftStorageKey(conversationId));
-    if (!raw) return "";
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed.text !== "string") return "";
-    return parsed.text;
-  } catch {
-    return "";
-  }
-}
-
-function loadConversationDraftUpdatedAt(conversationId) {
-  if (!conversationId) return 0;
-  try {
-    const raw = localStorage.getItem(getConversationDraftStorageKey(conversationId));
-    if (!raw) return 0;
-    const parsed = JSON.parse(raw);
-    const updatedAt = Number(parsed?.updatedAt) || 0;
-    return Number.isFinite(updatedAt) ? updatedAt : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function saveConversationDraft(conversationId, text) {
-  if (!conversationId) return;
-  const normalized = String(text || "").replace(/\r\n/g, "\n");
-  const trimmed = normalized.trim();
-  try {
-    if (!trimmed) {
-      localStorage.removeItem(getConversationDraftStorageKey(conversationId));
-      return;
-    }
-    localStorage.setItem(
-      getConversationDraftStorageKey(conversationId),
-      JSON.stringify({ text: normalized, updatedAt: Date.now() })
-    );
-  } catch {
-    // ignore
-  }
-}
-
-function clearConversationDraft(conversationId) {
-  if (!conversationId) return;
-  try {
-    localStorage.removeItem(getConversationDraftStorageKey(conversationId));
-  } catch {
-    // ignore
-  }
-  if (conversationListEl) {
-    renderConversations();
-  }
-}
-
-let draftSaveTimer = null;
-
-function scheduleDraftSave() {
-  if (!messageInput || state.sendingMessage) return;
-  const conversationId = state.selectedConversation?.id;
-  if (!conversationId) return;
-  const text = messageInput.value || "";
-  if (draftSaveTimer) {
-    clearTimeout(draftSaveTimer);
-  }
-  draftSaveTimer = setTimeout(() => {
-    draftSaveTimer = null;
-    saveConversationDraft(conversationId, text);
-    if (conversationListEl) {
-      renderConversations();
-    }
-  }, 250);
-}
-
-function persistDraftForActiveConversation() {
-  if (!messageInput) return;
-  const conversationId = state.selectedConversation?.id;
-  if (!conversationId) return;
-  saveConversationDraft(conversationId, messageInput.value || "");
-  if (conversationListEl) {
-    renderConversations();
-  }
-}
-
-function restoreDraftForConversation(conversationId) {
-  if (!messageInput || !conversationId) return;
-  const draft = loadConversationDraft(conversationId);
-  messageInput.value = draft || "";
-  scheduleMessageInputResize();
 }
 
 function loadSignMessagesPreference() {
@@ -1458,12 +1359,8 @@ function sortConversationsForSidebar(list) {
     const ap = a?.is_pinned ? 1 : 0;
     const bp = b?.is_pinned ? 1 : 0;
     if (ap !== bp) return bp - ap;
-    const messageAt = a?.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-    const messageBt = b?.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-    const draftAt = loadConversationDraftUpdatedAt(a?.id);
-    const draftBt = loadConversationDraftUpdatedAt(b?.id);
-    const at = Math.max(messageAt || 0, draftAt || 0);
-    const bt = Math.max(messageBt || 0, draftBt || 0);
+    const at = a?.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+    const bt = b?.last_message_at ? new Date(b.last_message_at).getTime() : 0;
     if (at !== bt) return bt - at;
     return (b?.id || 0) - (a?.id || 0);
   });
@@ -3786,262 +3683,6 @@ function updateScopeControls() {
 
 
 
-function isAdminUser() {
-  return Boolean(state.user?.is_admin);
-}
-
-function clearConversationAdminFilters(options = {}) {
-  const { rerender = true } = options;
-
-  state.conversationOwnerFilterIds = [];
-  state.conversationDepartmentFilterIds = [];
-  state.conversationOwnerQuery = "";
-  state.conversationDepartmentQuery = "";
-
-  if (filterOwnerSearch) filterOwnerSearch.value = "";
-  if (filterDepartmentSearch) filterDepartmentSearch.value = "";
-
-  if (filterOwnerOptions) {
-    filterOwnerOptions.innerHTML = "";
-    filterOwnerOptions.classList.add("hidden");
-  }
-
-  if (filterDepartmentOptions) {
-    filterDepartmentOptions.innerHTML = "";
-    filterDepartmentOptions.classList.add("hidden");
-  }
-
-  if (filterOwnerChips) filterOwnerChips.innerHTML = "";
-  if (filterDepartmentChips) filterDepartmentChips.innerHTML = "";
-
-  if (rerender) {
-    renderConversations(state.conversations);
-  }
-}
-
-function updateConversationAdminFiltersVisibility() {
-  if (!conversationAdminFilters) return;
-
-  const isAdmin = isAdminUser();
-  conversationAdminFilters.classList.toggle("hidden", !isAdmin);
-
-  if (!isAdmin) {
-    clearConversationAdminFilters({ rerender: false });
-  }
-}
-
-function getUserDisplayLabel(user) {
-  if (!user) return "";
-  if (user.full_name) return user.full_name;
-  if (user.username) return `@${user.username}`;
-  return "";
-}
-
-function getDepartmentDisplayLabel(dept) {
-  if (!dept) return "";
-  return dept.name || String(dept.id || "");
-}
-
-function renderConversationOwnerChips() {
-  if (!filterOwnerChips) return;
-
-  filterOwnerChips.innerHTML = "";
-  const selectedIds = Array.isArray(state.conversationOwnerFilterIds) ? state.conversationOwnerFilterIds : [];
-
-  selectedIds.forEach((rawId) => {
-    const userId = Number(rawId);
-    const user = (state.users || []).find((u) => u.id === userId);
-    const label = user ? getUserDisplayLabel(user) : `ID ${rawId}`;
-
-    const chip = document.createElement("span");
-    chip.className = "filter-chip";
-    chip.textContent = label;
-
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.setAttribute("aria-label", `Remover ${label}`);
-    remove.textContent = "×";
-    remove.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      state.conversationOwnerFilterIds = (state.conversationOwnerFilterIds || []).filter((id) => Number(id) !== userId);
-      renderConversationOwnerChips();
-      renderConversationOwnerOptions();
-      renderConversations(state.conversations);
-    });
-
-    chip.appendChild(remove);
-    filterOwnerChips.appendChild(chip);
-  });
-}
-
-function renderConversationDepartmentChips() {
-  if (!filterDepartmentChips) return;
-
-  filterDepartmentChips.innerHTML = "";
-  const selectedIds = Array.isArray(state.conversationDepartmentFilterIds) ? state.conversationDepartmentFilterIds : [];
-
-  selectedIds.forEach((rawId) => {
-    const deptId = Number(rawId);
-    const dept = (state.departments || []).find((d) => Number(d.id) === deptId);
-    const label = dept ? getDepartmentDisplayLabel(dept) : `Departamento ${rawId}`;
-
-    const chip = document.createElement("span");
-    chip.className = "filter-chip";
-    chip.textContent = label;
-
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.setAttribute("aria-label", `Remover ${label}`);
-    remove.textContent = "×";
-    remove.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      state.conversationDepartmentFilterIds = (state.conversationDepartmentFilterIds || []).filter(
-        (id) => Number(id) !== deptId
-      );
-      renderConversationDepartmentChips();
-      renderConversationDepartmentOptions();
-      renderConversations(state.conversations);
-    });
-
-    chip.appendChild(remove);
-    filterDepartmentChips.appendChild(chip);
-  });
-}
-
-function renderConversationOwnerOptions() {
-  if (!filterOwnerOptions || !filterOwnerSearch) return;
-
-  const query = (state.conversationOwnerQuery || "").trim().toLowerCase();
-  filterOwnerOptions.innerHTML = "";
-
-  if (!isAdminUser() || query.length < 1) {
-    filterOwnerOptions.classList.add("hidden");
-    return;
-  }
-
-  const selected = new Set((state.conversationOwnerFilterIds || []).map((id) => Number(id)));
-
-  const candidates = (state.users || [])
-    .filter((user) => user && !selected.has(user.id))
-    .map((user) => {
-      const label = getUserDisplayLabel(user);
-      const secondary = user.username ? `@${user.username}` : "";
-      const haystack = `${label} ${secondary}`.toLowerCase();
-      return { user, label, secondary, haystack };
-    })
-    .filter((item) => item.haystack.includes(query))
-    .slice(0, 8);
-
-  if (!candidates.length) {
-    filterOwnerOptions.classList.add("hidden");
-    return;
-  }
-
-  candidates.forEach(({ user, label, secondary }) => {
-    const option = document.createElement("button");
-    option.type = "button";
-    option.className = "filter-option";
-    option.innerHTML = `<span>${escapeHtml(label)}</span>${
-      secondary ? `<span class="meta">${escapeHtml(secondary)}</span>` : ""
-    }`;
-
-    option.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const set = new Set((state.conversationOwnerFilterIds || []).map((id) => Number(id)));
-      set.add(user.id);
-      state.conversationOwnerFilterIds = Array.from(set);
-      state.conversationOwnerQuery = "";
-      filterOwnerSearch.value = "";
-      renderConversationOwnerChips();
-      renderConversationOwnerOptions();
-      renderConversations(state.conversations);
-    });
-
-    filterOwnerOptions.appendChild(option);
-  });
-
-  filterOwnerOptions.classList.remove("hidden");
-}
-
-function renderConversationDepartmentOptions() {
-  if (!filterDepartmentOptions || !filterDepartmentSearch) return;
-
-  const query = (state.conversationDepartmentQuery || "").trim().toLowerCase();
-  filterDepartmentOptions.innerHTML = "";
-
-  if (!isAdminUser() || query.length < 1) {
-    filterDepartmentOptions.classList.add("hidden");
-    return;
-  }
-
-  const selected = new Set((state.conversationDepartmentFilterIds || []).map((id) => Number(id)));
-
-  const candidates = (state.departments || [])
-    .filter((dept) => dept && !selected.has(Number(dept.id)))
-    .map((dept) => {
-      const label = getDepartmentDisplayLabel(dept);
-      const haystack = `${label}`.toLowerCase();
-      return { dept, label, haystack };
-    })
-    .filter((item) => item.haystack.includes(query))
-    .slice(0, 8);
-
-  if (!candidates.length) {
-    filterDepartmentOptions.classList.add("hidden");
-    return;
-  }
-
-  candidates.forEach(({ dept, label }) => {
-    const option = document.createElement("button");
-    option.type = "button";
-    option.className = "filter-option";
-    option.textContent = label;
-
-    option.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const set = new Set((state.conversationDepartmentFilterIds || []).map((id) => Number(id)));
-      set.add(Number(dept.id));
-      state.conversationDepartmentFilterIds = Array.from(set);
-      state.conversationDepartmentQuery = "";
-      filterDepartmentSearch.value = "";
-      renderConversationDepartmentChips();
-      renderConversationDepartmentOptions();
-      renderConversations(state.conversations);
-    });
-
-    filterDepartmentOptions.appendChild(option);
-  });
-
-  filterDepartmentOptions.classList.remove("hidden");
-}
-
-function userMatchesDepartmentFilter(user, selectedDeptIds) {
-  if (!user) return false;
-  const selected = Array.isArray(selectedDeptIds) ? selectedDeptIds : [];
-  if (!selected.length) return true;
-
-  const userDepts = Array.isArray(user.departments) ? user.departments : [];
-  if (!userDepts.length) return false;
-
-  for (const rawId of selected) {
-    const deptId = Number(rawId);
-    if (userDepts.includes(deptId) || userDepts.includes(String(deptId))) {
-      return true;
-    }
-    const dept = (state.departments || []).find((d) => Number(d.id) === deptId);
-    const deptName = dept?.name;
-    if (deptName && userDepts.includes(deptName)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 function renderConversations(conversations = state.conversations) {
 
   conversationListEl.innerHTML = "";
@@ -4054,10 +3695,6 @@ function renderConversations(conversations = state.conversations) {
 
   const tagFilterId = state.tagFilterId;
 
-  const ownerFilterIds = isAdminUser() ? (state.conversationOwnerFilterIds || []) : [];
-  const departmentFilterIds = isAdminUser() ? (state.conversationDepartmentFilterIds || []) : [];
-  const ownerFilterSet = new Set(ownerFilterIds.map((id) => Number(id)));
-
   const activeType = state.activeConversationType === "groups" ? "groups" : "chats";
 
   const filtered = list.filter((conversation) => {
@@ -4068,8 +3705,6 @@ function renderConversations(conversations = state.conversations) {
 
     }
 
-    const draftText = loadConversationDraft(conversation.id);
-
     const haystack = [
 
       conversation.debtor_name,
@@ -4077,8 +3712,6 @@ function renderConversations(conversations = state.conversations) {
       conversation.debtor_phone,
 
       conversation.last_message_preview,
-
-      draftText,
 
     ]
 
@@ -4100,25 +3733,13 @@ function renderConversations(conversations = state.conversations) {
 
       activeType === "groups" ? isGroupConversation(conversation) : !isGroupConversation(conversation);
 
-    const matchesOwner =
-      !ownerFilterSet.size ||
-      (conversation.owner_user_id && ownerFilterSet.has(Number(conversation.owner_user_id)));
-
-    const matchesDepartment =
-      !departmentFilterIds.length ||
-      (conversation.owner_user_id &&
-        userMatchesDepartmentFilter(
-          (state.users || []).find((u) => u.id === Number(conversation.owner_user_id)),
-          departmentFilterIds
-        ));
-
-    return matchesSearch && matchesTag && matchesType && matchesOwner && matchesDepartment;
+    return matchesSearch && matchesTag && matchesType;
 
   });
 
-  const ordered = sortConversationsForSidebar(filtered);
 
-  if (!ordered.length) {
+
+  if (!filtered.length) {
 
     const empty = document.createElement("p");
 
@@ -4138,7 +3759,7 @@ function renderConversations(conversations = state.conversations) {
 
 
 
-  ordered.forEach((conversation) => {
+  filtered.forEach((conversation) => {
 
     const item = document.createElement("article");
 
@@ -4202,17 +3823,7 @@ function renderConversations(conversations = state.conversations) {
 
     preview.className = "conversation-preview";
 
-    const draftText = loadConversationDraft(conversation.id);
-    const draftNormalized = String(draftText || "").replace(/\s+/g, " ").trim();
-    if (draftNormalized) {
-      const snippet =
-        draftNormalized.length > 70 ? `${draftNormalized.slice(0, 70).trim()}…` : draftNormalized;
-      preview.classList.add("is-draft");
-      preview.innerHTML = `<span class="draft-label">Rascunho:</span> ${escapeHtml(snippet)}`;
-    } else {
-      preview.classList.remove("is-draft");
-      preview.textContent = conversation.last_message_preview || "Sem mensagens";
-    }
+    preview.textContent = conversation.last_message_preview || "Sem mensagens";
 
     const time = document.createElement("div");
 
@@ -4431,9 +4042,6 @@ async function selectConversation(conversationId) {
   if (!conversation) {
     return;
   }
-  // Salva rascunho antes de trocar de conversa.
-  persistDraftForActiveConversation();
-
   stopPolling();
   state.selectedConversation = conversation;
   state.messagesSignature = null;
@@ -4447,9 +4055,6 @@ async function selectConversation(conversationId) {
   closeTagMenus();
 
   ensureConversationAvatar(conversation.id);
-
-  // Restaura rascunho da conversa selecionada.
-  restoreDraftForConversation(conversation.id);
 
   await loadMessages();
 
@@ -4589,11 +4194,6 @@ async function sendMediaFile(file, captionOverride = null) {
     await loadMessages();
 
     clearReplyContext();
-
-    // Se a legenda foi enviada usando o input principal, limpa o rascunho.
-    if (captionOverride === null) {
-      clearConversationDraft(state.selectedConversation?.id);
-    }
 
   } finally {
 
@@ -5717,9 +5317,7 @@ if (messageForm) {
 
   const content = applySignatureIfEnabled(raw);
   const originalContent = raw;
-  const conversationId = state.selectedConversation.id;
 
-  state.sendingMessage = true;
   messageInput.value = "";
   scheduleMessageInputResize();
   closeQuickReplyPanel();
@@ -5728,7 +5326,7 @@ if (messageForm) {
 
     const payload = {
 
-      conversation_id: conversationId,
+      conversation_id: state.selectedConversation.id,
 
       direction: "agent",
 
@@ -5756,18 +5354,13 @@ if (messageForm) {
 
     clearReplyContext();
 
-    clearConversationDraft(conversationId);
-
   } catch (error) {
 
     messageInput.value = originalContent;
     scheduleMessageInputResize();
-    saveConversationDraft(conversationId, originalContent);
 
     alert(error.message);
 
-  } finally {
-    state.sendingMessage = false;
   }
 
   });
@@ -5780,7 +5373,6 @@ if (messageInput && messageForm) {
   messageInput.addEventListener("input", () => {
     scheduleMessageInputResize();
     updateQuickReplyPanel();
-    scheduleDraftSave();
   });
 
   // Set the initial height once styles are applied.
@@ -5855,12 +5447,6 @@ if (signMessagesToggle) {
   signMessagesToggle.addEventListener("change", () => {
     state.signMessagesEnabled = Boolean(signMessagesToggle.checked);
     saveSignMessagesPreference(state.signMessagesEnabled);
-  });
-}
-
-if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", () => {
-    persistDraftForActiveConversation();
   });
 }
 
@@ -6505,13 +6091,99 @@ async function loadSession(showError = false) {
 
     updateIntegrationStatus(session.status);
 
-    // Oculta detalhes da sessão para todos os usuários (mantém apenas status + QR + "Gerar novo QR").
-    sessionInfoEl.classList.add("hidden");
-    sessionInfoEl.innerHTML = "";
+    const lastSync = session.last_synced_at
 
-    updateQrPreview(session);
+      ? formatTimestamp(session.last_synced_at)
+
+      : "Nunca";
 
     const provider = session.provider || "evolution";
+
+    const statusInfo = getSessionStatusInfo(session.status);
+
+    const infoFields = [
+
+      { label: "C?digo", value: session.session_code },
+
+      { label: "Criado", value: formatTimestamp(session.created_at) },
+
+      { label: "Provedor", value: provider },
+
+    ];
+
+    if (session.integration_base_url) {
+
+      infoFields.push({ label: "URL", value: session.integration_base_url });
+
+    }
+
+    if (session.integration_instance_id) {
+
+      infoFields.push({
+
+        label: "Inst?ncia",
+
+        value: session.integration_instance_id,
+
+      });
+
+    }
+
+    const infoHtml = infoFields
+
+      .filter((field) => Boolean(field.value))
+
+      .map(
+
+        (field) => `
+
+        <article class="session-meta-item">
+
+          <p class="session-meta-label">${field.label}</p>
+
+          <p class="session-meta-value">${field.value}</p>
+
+        </article>`
+
+      )
+
+      .join("");
+
+    sessionInfoEl.innerHTML = `
+
+      <div class="session-summary">
+
+        <div>
+
+          <p class="session-summary-label">Status atual</p>
+
+          <p class="session-summary-value">${statusInfo.label}</p>
+
+          <p class="session-summary-hint">${statusInfo.hint}</p>
+
+        </div>
+
+        <span class="session-chip ${statusInfo.tone}">${statusInfo.label}</span>
+
+      </div>
+
+      <div class="session-meta-grid">
+
+        ${infoHtml}
+
+      </div>
+
+      <div class="session-sync-card">
+
+        <small>?ltima sincroniza??o</small>
+
+        <strong>${lastSync}</strong>
+
+      </div>
+
+    `;
+
+    updateQrPreview(session);
 
     if (integrationProviderSelect) {
 
@@ -6549,8 +6221,7 @@ async function loadSession(showError = false) {
 
     console.error("Erro ao carregar sessão", error);
 
-    sessionInfoEl.classList.add("hidden");
-    sessionInfoEl.innerHTML = "";
+    sessionInfoEl.innerHTML = `<p class="empty">${error.message}</p>`;
 
     updateIntegrationStatus(null);
 
@@ -6602,117 +6273,13 @@ function updateIntegrationStatus(status) {
 
 }
 
-function hideConversationFilterOptions() {
-  filterOwnerOptions?.classList.add("hidden");
-  filterDepartmentOptions?.classList.add("hidden");
-}
-
-function positionConversationFilterMenu() {
-  if (!conversationFilterButton || !conversationFilterMenu) return;
-  if (conversationFilterMenu.classList.contains("hidden")) return;
-
-  conversationFilterMenu.style.position = "fixed";
-  conversationFilterMenu.style.zIndex = "9999";
-
-  const gap = 10;
-  const buttonRect = conversationFilterButton.getBoundingClientRect();
-  const menuRect = conversationFilterMenu.getBoundingClientRect();
-
-  let left = buttonRect.left;
-  if (left + menuRect.width > window.innerWidth - gap) {
-    left = window.innerWidth - gap - menuRect.width;
-  }
-  left = Math.max(gap, left);
-
-  let top = buttonRect.bottom + gap;
-  if (top + menuRect.height > window.innerHeight - gap) {
-    top = buttonRect.top - gap - menuRect.height;
-  }
-  top = Math.max(gap, Math.min(top, window.innerHeight - gap - menuRect.height));
-
-  conversationFilterMenu.style.left = `${Math.round(left)}px`;
-  conversationFilterMenu.style.top = `${Math.round(top)}px`;
-}
-
-async function ensureConversationFilterDataLoaded() {
-  if (!isAdminUser()) return;
-
-  const tasks = [];
-  if (!Array.isArray(state.users) || !state.users.length) {
-    tasks.push(loadUsers());
-  }
-  if (!Array.isArray(state.departments) || !state.departments.length) {
-    tasks.push(loadDepartments({ silent: true }));
-  }
-
-  if (!tasks.length) return;
-  await Promise.allSettled(tasks);
-}
-
-async function prepareConversationFilterMenu() {
-  updateConversationAdminFiltersVisibility();
-
-  if (!isAdminUser()) {
-    hideConversationFilterOptions();
-    return;
-  }
-
-  await ensureConversationFilterDataLoaded();
-  renderConversationOwnerChips();
-  renderConversationDepartmentChips();
-  renderConversationOwnerOptions();
-  renderConversationDepartmentOptions();
-}
-
 if (conversationFilterButton && conversationFilterMenu) {
-  conversationFilterButton.addEventListener("click", async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-
+  conversationFilterButton.addEventListener("click", () => {
     const willOpen = conversationFilterMenu.classList.contains("hidden");
     conversationFilterButton.setAttribute("aria-expanded", String(willOpen));
     conversationFilterMenu.classList.toggle("hidden", !willOpen);
-
-    if (willOpen) {
-      await prepareConversationFilterMenu();
-      requestAnimationFrame(() => {
-        positionConversationFilterMenu();
-        requestAnimationFrame(positionConversationFilterMenu);
-      });
-    } else {
-      hideConversationFilterOptions();
-    }
-  });
-
-  window.addEventListener("resize", () => {
-    if (conversationFilterMenu.classList.contains("hidden")) return;
-    positionConversationFilterMenu();
   });
 }
-
-filterOwnerSearch?.addEventListener("input", (event) => {
-  state.conversationOwnerQuery = event.target.value || "";
-  renderConversationOwnerOptions();
-});
-
-filterOwnerSearch?.addEventListener("focus", () => {
-  renderConversationOwnerOptions();
-});
-
-filterDepartmentSearch?.addEventListener("input", (event) => {
-  state.conversationDepartmentQuery = event.target.value || "";
-  renderConversationDepartmentOptions();
-});
-
-filterDepartmentSearch?.addEventListener("focus", () => {
-  renderConversationDepartmentOptions();
-});
-
-conversationFilterClear?.addEventListener("click", (event) => {
-  event.preventDefault();
-  event.stopPropagation();
-  clearConversationAdminFilters();
-});
 
 
 
@@ -7054,7 +6621,6 @@ function updateUserInfo() {
 
   renderUsers();
   updateScopeControls();
-  updateConversationAdminFiltersVisibility();
   updateNoteButtonState();
 }
 
