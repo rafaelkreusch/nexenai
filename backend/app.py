@@ -5,6 +5,7 @@ import re
 import base64
 import csv
 import io
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -12,6 +13,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 from mimetypes import guess_extension
 
+import anyio
 import requests
 
 from dotenv import load_dotenv
@@ -29,7 +31,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from passlib.context import CryptContext
 from pydantic import ValidationError
@@ -144,6 +146,55 @@ UAZAPI_DEFAULT_BASE_URL = os.getenv("UAZAPI_DEFAULT_BASE_URL") or UAZAPI_ADMIN_B
 if UAZAPI_DEFAULT_BASE_URL:
     UAZAPI_DEFAULT_BASE_URL = UAZAPI_DEFAULT_BASE_URL.rstrip("/")
 logger.info("UAZAPI_USE_GLOBAL_WEBHOOK=%s", UAZAPI_USE_GLOBAL_WEBHOOK)
+
+# Realtime (SSE) broker: pub/sub em memória por organização.
+# Observação: em múltiplos workers/processos, cada processo terá seu próprio broker.
+SSE_QUEUE_MAXSIZE = 200
+SSE_PING_INTERVAL_SECONDS = 15
+_sse_lock = asyncio.Lock()
+_sse_subscribers: Dict[int, List[asyncio.Queue]] = {}
+
+
+async def _sse_register(org_id: int) -> asyncio.Queue:
+    queue: asyncio.Queue = asyncio.Queue(maxsize=SSE_QUEUE_MAXSIZE)
+    async with _sse_lock:
+        _sse_subscribers.setdefault(org_id, []).append(queue)
+    return queue
+
+
+async def _sse_unregister(org_id: int, queue: asyncio.Queue) -> None:
+    async with _sse_lock:
+        items = _sse_subscribers.get(org_id) or []
+        try:
+            items.remove(queue)
+        except ValueError:
+            return
+        if not items:
+            _sse_subscribers.pop(org_id, None)
+
+
+async def _sse_publish(org_id: int, event: str, payload: Dict[str, Any]) -> None:
+    async with _sse_lock:
+        queues = list(_sse_subscribers.get(org_id) or [])
+    for queue in queues:
+        try:
+            queue.put_nowait((event, payload))
+        except asyncio.QueueFull:
+            continue
+
+
+def sse_notify(org_id: Optional[int], event: str, payload: Dict[str, Any]) -> None:
+    if not org_id:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            anyio.from_thread.run(_sse_publish, int(org_id), event, payload)
+        except Exception:
+            return
+    else:
+        loop.create_task(_sse_publish(int(org_id), event, payload))
 
 app.add_middleware(
     CORSMiddleware,
@@ -1806,6 +1857,52 @@ def healthcheck() -> dict:
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
 
+@app.get("/api/events")
+async def stream_events(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    org_id = current_user.organization_id
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Organizacao invalida")
+
+    queue = await _sse_register(org_id)
+
+    async def event_stream() -> Iterable[str]:
+        # Primeiro evento para o cliente saber que conectou.
+        yield "event: ready\ndata: {}\n\n"
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event_name, payload = await asyncio.wait_for(
+                        queue.get(), timeout=SSE_PING_INTERVAL_SECONDS
+                    )
+                except asyncio.TimeoutError:
+                    yield "event: ping\ndata: {}\n\n"
+                    continue
+                try:
+                    data = json.dumps(payload or {}, ensure_ascii=False)
+                except Exception:
+                    data = "{}"
+                yield f"event: {event_name}\ndata: {data}\n\n"
+        finally:
+            await _sse_unregister(org_id, queue)
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        # Evita buffering em alguns proxies.
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
 @app.get("/api/conversations", response_model=List[ConversationSummary])
 def list_conversations(
     request: Request,
@@ -2494,6 +2591,16 @@ def send_message(
         session.commit()
         session.refresh(message)
 
+    sse_notify(
+        current_user.organization_id,
+        "message",
+        {
+            "conversation_id": conversation.id,
+            "message_id": message.id,
+            "direction": getattr(message.direction, "value", str(message.direction)),
+        },
+    )
+
     return serialize_message_entity(message)
 
 
@@ -2625,6 +2732,16 @@ async def send_audio_message(
         session.commit()
         session.refresh(message)
 
+    sse_notify(
+        current_user.organization_id,
+        "message",
+        {
+            "conversation_id": conversation.id,
+            "message_id": message.id,
+            "direction": getattr(message.direction, "value", str(message.direction)),
+        },
+    )
+
     return serialize_message_entity(message)
 
 
@@ -2738,6 +2855,16 @@ async def send_media_file(
             status_code=502,
             detail=f"Erro ao enviar arquivo: {exc}",
         ) from exc
+
+    sse_notify(
+        current_user.organization_id,
+        "message",
+        {
+            "conversation_id": conversation.id,
+            "message_id": message.id,
+            "direction": getattr(message.direction, "value", str(message.direction)),
+        },
+    )
 
     return serialize_message_entity(message)
 
@@ -3007,6 +3134,15 @@ def simulate_incoming_message(
     session.add(conversation)
     session.commit()
     session.refresh(message)
+    sse_notify(
+        conversation.organization_id,
+        "message",
+        {
+            "conversation_id": conversation.id,
+            "message_id": message.id,
+            "direction": getattr(message.direction, "value", message.direction),
+        },
+    )
     return serialize_message_entity(message)
 
 

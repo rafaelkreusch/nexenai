@@ -2061,6 +2061,7 @@ function handleUnauthorized() {
   stopReminderPolling();
 
   stopConversationPolling();
+  stopRealtime();
 
   setToken(null);
 
@@ -5674,7 +5675,8 @@ function startPolling() {
 
   stopPolling();
 
-  state.pollHandle = setInterval(loadMessages, 4000);
+  const intervalMs = (state.realtimeRunning || state.realtimeConnected) ? 60000 : 4000;
+  state.pollHandle = setInterval(loadMessages, intervalMs);
 
 }
 
@@ -5694,12 +5696,159 @@ function startConversationPolling() {
 
   stopConversationPolling();
 
+  const intervalMs = (state.realtimeRunning || state.realtimeConnected) ? 60000 : 5000;
   state.conversationPollHandle = setInterval(() => {
 
     loadConversations({ silent: true });
 
-  }, 5000);
+  }, intervalMs);
 
+}
+
+function stopRealtime() {
+  if (state.realtimeRetryHandle) {
+    clearTimeout(state.realtimeRetryHandle);
+    state.realtimeRetryHandle = null;
+  }
+  if (state.realtimeAbortController) {
+    try {
+      state.realtimeAbortController.abort();
+    } catch {
+      // ignore
+    }
+    state.realtimeAbortController = null;
+  }
+  state.realtimeRunning = false;
+  state.realtimeConnected = false;
+}
+
+function scheduleRealtimeRefreshConversations() {
+  if (state.realtimeRefreshConversationsHandle) return;
+  state.realtimeRefreshConversationsHandle = setTimeout(() => {
+    state.realtimeRefreshConversationsHandle = null;
+    loadConversations({ silent: true }).catch((error) =>
+      console.warn("Falha ao atualizar conversas via SSE", error)
+    );
+  }, 300);
+}
+
+function scheduleRealtimeRefreshMessages(conversationId) {
+  if (!state.selectedConversation || state.selectedConversation.id !== conversationId) return;
+  if (state.realtimeRefreshMessagesHandle) return;
+  state.realtimeRefreshMessagesHandle = setTimeout(() => {
+    state.realtimeRefreshMessagesHandle = null;
+    loadMessages().catch((error) =>
+      console.warn("Falha ao atualizar mensagens via SSE", error)
+    );
+  }, 250);
+}
+
+function handleRealtimeEvent(eventName, payload) {
+  if (!eventName || eventName === "ping" || eventName === "ready") return;
+  if (eventName === "message") {
+    const conversationId = payload?.conversation_id;
+    if (conversationId) {
+      scheduleRealtimeRefreshConversations();
+      scheduleRealtimeRefreshMessages(conversationId);
+    } else {
+      scheduleRealtimeRefreshConversations();
+    }
+  }
+}
+
+function parseAndDispatchSseChunk(buffer) {
+  const blocks = buffer.split(/\r?\n\r?\n/);
+  const remainder = blocks.pop() ?? "";
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/);
+    let eventName = "";
+    const dataParts = [];
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        dataParts.push(line.slice(5).trimStart());
+      }
+    }
+    const dataRaw = dataParts.join("\n");
+    let payload = {};
+    if (dataRaw) {
+      try {
+        payload = JSON.parse(dataRaw);
+      } catch {
+        payload = {};
+      }
+    }
+    handleRealtimeEvent(eventName, payload);
+  }
+  return remainder;
+}
+
+async function startRealtime() {
+  if (!state.token) return;
+  if (state.realtimeRunning) return;
+
+  if (!window.fetch || !window.TextDecoder) {
+    console.warn("SSE indisponível neste navegador.");
+    return;
+  }
+
+  state.realtimeRunning = true;
+  state.realtimeConnected = false;
+
+  let backoffMs = 1000;
+  while (state.realtimeRunning) {
+    const abortController = new AbortController();
+    state.realtimeAbortController = abortController;
+    try {
+      const response = await fetch("/api/events", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${state.token}`,
+        },
+        signal: abortController.signal,
+      });
+
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Falha ao conectar no SSE (${response.status})`);
+      }
+
+      if (!response.body || !response.body.getReader) {
+        throw new Error("Streaming não suportado no fetch deste navegador.");
+      }
+
+      state.realtimeConnected = true;
+      backoffMs = 1000;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      while (state.realtimeRunning) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        buffer = parseAndDispatchSseChunk(buffer);
+      }
+    } catch (error) {
+      if (!state.realtimeRunning) break;
+      console.warn("Conexão SSE caiu; tentando reconectar...", error);
+    } finally {
+      state.realtimeConnected = false;
+      state.realtimeAbortController = null;
+    }
+
+    if (!state.realtimeRunning) break;
+    await new Promise((resolve) => {
+      state.realtimeRetryHandle = setTimeout(resolve, backoffMs);
+    });
+    backoffMs = Math.min(backoffMs * 2, 30000);
+  }
 }
 
 
@@ -9520,6 +9669,8 @@ async function enterWorkspace() {
 
   tasks.push(refreshOrganizationInfo());
   await Promise.all(tasks);
+
+  startRealtime().catch((error) => console.warn("SSE não iniciou", error));
 
   startConversationPolling();
 
