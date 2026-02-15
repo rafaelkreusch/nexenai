@@ -578,6 +578,13 @@ const state = {
   messagesSignature: null,
   notesSignature: null,
   latestMessages: [],
+  fullMessages: [],
+  messagesHasMoreByConversation: {},
+  messagesOldestIdByConversation: {},
+  messagesByConversation: {},
+  notesByConversation: {},
+  messagesPageSize: 200,
+  messageLoadAbortController: null,
   replyContext: null,
   emojiPickerOpen: false,
   quickReplyOpen: false,
@@ -658,6 +665,12 @@ const state = {
   imagePreviewOpen: false,
   signMessagesEnabled: false,
   sendingMessage: false,
+  realtimeRunning: false,
+  realtimeConnected: false,
+  realtimeAbortController: null,
+  realtimeRetryHandle: null,
+  realtimeRefreshConversationsHandle: null,
+  realtimeRefreshMessagesHandle: null,
 
 };
 
@@ -4439,7 +4452,6 @@ async function selectConversation(conversationId) {
   state.selectedConversation = conversation;
   state.messagesSignature = null;
   state.latestMessages = [];
-  state.fullMessages = [];
   setChatSearchOpen(false);
   clearReplyContext();
   closeEmojiPicker();
@@ -4452,7 +4464,22 @@ async function selectConversation(conversationId) {
   // Restaura rascunho da conversa selecionada.
   restoreDraftForConversation(conversation.id);
 
-  await loadMessages();
+  const cachedMessages = state.messagesByConversation[conversation.id];
+  const cachedNotes = state.notesByConversation[conversation.id];
+  if (Array.isArray(cachedMessages) && cachedMessages.length) {
+    state.fullMessages = cachedMessages.slice();
+    state.conversationNotes = Array.isArray(cachedNotes) ? cachedNotes.slice() : [];
+    renderMessages(state.fullMessages, {
+      notes: state.conversationNotes,
+      fullMessages: state.fullMessages,
+      hasMore: Boolean(state.messagesHasMoreByConversation[conversation.id]),
+    });
+  } else {
+    state.fullMessages = [];
+    state.conversationNotes = [];
+  }
+
+  await loadMessages({ refresh: true });
 
   startPolling();
 
@@ -4460,44 +4487,182 @@ async function selectConversation(conversationId) {
 
 }
 
+async function fetchMessagesPage(conversationId, { limit, beforeId, signal } = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set("limit", String(limit));
+  if (beforeId) params.set("before_id", String(beforeId));
+  const url = `/api/conversations/${conversationId}/messages?${params.toString()}`;
 
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${state.token}`,
+    },
+    signal,
+  });
 
-async function loadMessages() {
-  if (!state.selectedConversation) return;
+  if (response.status === 401) {
+    handleUnauthorized();
+    throw new Error("Sessão expirada. Faça login novamente.");
+  }
+
+  if (!response.ok) {
+    const raw = await response.text().catch(() => "");
+    let detail = {};
+    if (raw) {
+      try {
+        detail = JSON.parse(raw);
+      } catch {
+        detail = { detail: raw };
+      }
+    }
+    throw new Error(detail.detail || `Falha na requisição ${response.status}`);
+  }
+
+  const hasMore = response.headers.get("X-Has-More") === "1";
+  const data = await response.json();
+  return { messages: Array.isArray(data) ? data : [], hasMore };
+}
+
+function updateConversationMessageCache(conversationId, messages, notes) {
+  state.messagesByConversation[conversationId] = Array.isArray(messages) ? messages.slice() : [];
+  if (Array.isArray(notes)) {
+    state.notesByConversation[conversationId] = notes.slice();
+  }
+}
+
+async function loadOlderMessages() {
+  const conversationId = state.selectedConversation?.id;
+  if (!conversationId) return;
+  if (!state.messagesHasMoreByConversation[conversationId]) return;
+  const beforeId = state.messagesOldestIdByConversation[conversationId];
+  if (!beforeId) return;
+
   try {
-    const [messages, notes] = await Promise.all([
-      fetchJson(`/api/conversations/${state.selectedConversation.id}/messages`),
-      fetchJson(`/api/conversations/${state.selectedConversation.id}/notes`),
-    ]);
-    state.fullMessages = messages;
-    const signature = JSON.stringify(
-      messages.map((message) => [
-        message.id,
-        message.message_type,
-        message.media_url,
-        message.content,
-        message.media_duration_seconds,
-        message.reply_to_message_id,
-      ])
-    );
-    const notesSignature = JSON.stringify(
-      notes.map((note) => [note.id, note.text, note.created_at])
-    );
-    if (
-      signature === state.messagesSignature &&
-      notesSignature === state.notesSignature
-    ) {
+    const { messages: older, hasMore } = await fetchMessagesPage(conversationId, {
+      limit: state.messagesPageSize,
+      beforeId,
+    });
+    if (!older.length) {
+      state.messagesHasMoreByConversation[conversationId] = false;
+      renderMessages(state.fullMessages || [], {
+        notes: state.conversationNotes || [],
+        fullMessages: state.fullMessages || [],
+        hasMore: false,
+      });
       return;
     }
-    state.messagesSignature = signature;
-    state.notesSignature = notesSignature;
-    state.conversationNotes = notes;
-    renderMessages(messages, { notes, fullMessages: messages });
+
+    const mergedMap = new Map((state.fullMessages || []).map((m) => [m.id, m]));
+    older.forEach((m) => mergedMap.set(m.id, m));
+    const merged = Array.from(mergedMap.values()).sort((a, b) => (a.id || 0) - (b.id || 0));
+    state.fullMessages = merged;
+
+    const newOldestId = merged[0]?.id || beforeId;
+    state.messagesOldestIdByConversation[conversationId] = newOldestId;
+    state.messagesHasMoreByConversation[conversationId] = Boolean(hasMore);
+
+    updateConversationMessageCache(conversationId, merged, state.conversationNotes || []);
+
+    renderMessages(merged, {
+      notes: state.conversationNotes || [],
+      fullMessages: merged,
+      hasMore: Boolean(hasMore),
+    });
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function loadMessages(options = {}) {
+  if (!state.selectedConversation) return;
+  const conversationId = state.selectedConversation.id;
+  const refresh = options.refresh !== false;
+
+  if (refresh) {
+    if (state.messageLoadAbortController) {
+      try {
+        state.messageLoadAbortController.abort();
+      } catch {
+        // ignore
+      }
+    }
+    state.messageLoadAbortController = new AbortController();
+  }
+
+  const signal = state.messageLoadAbortController?.signal;
+  try {
+    const [{ messages: latest, hasMore }, notes] = await Promise.all([
+      fetchMessagesPage(conversationId, {
+        limit: state.messagesPageSize,
+        signal,
+      }),
+      fetchJson(`/api/conversations/${conversationId}/notes`),
+    ]);
+
+    // Trocar de conversa enquanto carregava: ignora.
+    if (!state.selectedConversation || state.selectedConversation.id !== conversationId) {
+      return;
+    }
+
+    const previousHasMore = Boolean(state.messagesHasMoreByConversation[conversationId]);
+    const previousOldestId = state.messagesOldestIdByConversation[conversationId] || null;
+    const oldestIdInPage = latest[0]?.id || null;
+
+    // Mantém mensagens já carregadas (ex.: páginas antigas) e mescla a página mais recente.
+    const mergedMap = new Map((state.fullMessages || []).map((m) => [m.id, m]));
+    latest.forEach((m) => mergedMap.set(m.id, m));
+    let merged = Array.from(mergedMap.values()).sort((a, b) => (a.id || 0) - (b.id || 0));
+
+    // Limite de memória/DOM (evita crescer infinito).
+    if (merged.length > 2000) {
+      merged = merged.slice(merged.length - 2000);
+    }
+
+    state.fullMessages = merged;
+    state.conversationNotes = Array.isArray(notes) ? notes : [];
+
+    // Atualiza paginação.
+    const newOldestId =
+      previousOldestId && oldestIdInPage ? Math.min(previousOldestId, oldestIdInPage) : (previousOldestId || oldestIdInPage);
+    state.messagesOldestIdByConversation[conversationId] = newOldestId;
+
+    let effectiveHasMore = previousHasMore;
+    if (!previousOldestId || (previousOldestId && oldestIdInPage && previousOldestId === oldestIdInPage)) {
+      effectiveHasMore = Boolean(hasMore);
+    }
+    // Se já tínhamos mais páginas e ainda não carregamos até o começo, mantém true.
+    if (previousHasMore) {
+      effectiveHasMore = true;
+    }
+    state.messagesHasMoreByConversation[conversationId] = effectiveHasMore;
+
+    updateConversationMessageCache(conversationId, merged, state.conversationNotes);
+
+    // Assinatura leve (evita JSON.stringify gigante).
+    const last = merged[merged.length - 1];
+    const sig = `${merged.length}:${merged[0]?.id || 0}:${last?.id || 0}:${last?.timestamp || ""}`;
+    const notesSig = Array.isArray(notes)
+      ? `${notes.length}:${notes[notes.length - 1]?.id || 0}:${notes[notes.length - 1]?.created_at || ""}`
+      : "0";
+    if (sig === state.messagesSignature && notesSig === state.notesSignature) {
+      return;
+    }
+    state.messagesSignature = sig;
+    state.notesSignature = notesSig;
+
+    renderMessages(merged, {
+      notes: state.conversationNotes,
+      fullMessages: merged,
+      hasMore: effectiveHasMore,
+    });
+
     clearUnreadForActiveConversation();
     if (state.messageSearchQuery) {
       applyChatMessageSearch({ focus: false });
     }
   } catch (error) {
+    if (error?.name === "AbortError") return;
     console.error(error);
   }
 }
@@ -4618,6 +4783,7 @@ function renderMessages(messages, options = {}) {
   const preserveScroll = Boolean(options.preserveScroll);
   const notes = options.notes || state.conversationNotes || [];
   const fullMessages = Array.isArray(options.fullMessages) ? options.fullMessages : messages;
+  const hasMore = Boolean(options.hasMore);
   state.latestMessages = fullMessages.slice();
   const searchQuery = String(state.messageSearchQuery || "").trim().toLowerCase();
   const searchMatches = state.messageSearchMatches || [];
@@ -4633,6 +4799,18 @@ function renderMessages(messages, options = {}) {
     empty.textContent = "Ainda sem mensagens.";
     messageListEl.appendChild(empty);
     return;
+  }
+
+  if (hasMore) {
+    const wrap = document.createElement("div");
+    wrap.className = "chat-load-more";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chat-load-more-button";
+    btn.textContent = "Carregar mensagens anteriores";
+    btn.addEventListener("click", () => loadOlderMessages());
+    wrap.appendChild(btn);
+    messageListEl.appendChild(wrap);
   }
 
   const messageMap = new Map(messages.map((msg) => [msg.id, msg]));

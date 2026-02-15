@@ -5688,6 +5688,28 @@ button.reminder-trigger {
   outline: none;
 }
 
+.chat-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 0.25rem 0 0.75rem;
+}
+
+.chat-load-more-button {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+}
+
+.chat-load-more-button:hover,
+.chat-load-more-button:focus-visible {
+  border-color: rgba(205, 92, 221, 0.75);
+  box-shadow: 0 0 0 2px rgba(205, 92, 221, 0.2);
+  outline: none;
+}
+
 .message-selection-bar.hidden {
   display: none;
 }

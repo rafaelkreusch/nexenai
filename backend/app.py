@@ -27,6 +27,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -2134,6 +2135,9 @@ def mark_conversation_unread(
 @app.get("/api/conversations/{conversation_id}/messages", response_model=List[MessageRead])
 def list_messages(
     conversation_id: int,
+    response: Response,
+    limit: Optional[int] = Query(None, ge=1, le=1000),
+    before_id: Optional[int] = Query(None, ge=1),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> List[MessageRead]:
@@ -2141,11 +2145,21 @@ def list_messages(
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
     ensure_conversation_access(conversation, current_user)
-    messages = session.exec(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.timestamp.asc())
-    ).all()
+    query = select(Message).where(Message.conversation_id == conversation_id)
+    if before_id:
+        query = query.where(Message.id < before_id)
+
+    has_more = False
+    if limit:
+        # Busca do mais recente para o mais antigo para permitir paginação,
+        # mas devolve em ordem crescente para renderização.
+        rows = session.exec(query.order_by(Message.id.desc()).limit(limit + 1)).all()
+        has_more = len(rows) > limit
+        messages = list(reversed(rows[:limit]))
+        if response is not None:
+            response.headers["X-Has-More"] = "1" if has_more else "0"
+    else:
+        messages = session.exec(query.order_by(Message.timestamp.asc())).all()
     unread_messages = [
         message
         for message in messages
