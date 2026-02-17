@@ -555,6 +555,10 @@ const state = {
   conversationPollHandle: null,
 
   viewAllConversations: false,
+  conversationsPageSize: 150,
+  conversationsOffset: 0,
+  conversationsHasMore: true,
+  conversationsLoadingMore: false,
 
   activeConversationType: "chats",
 
@@ -4357,6 +4361,16 @@ function renderConversations(conversations = state.conversations) {
 
   });
 
+  if (state.conversationsHasMore) {
+    const loadMore = document.createElement("button");
+    loadMore.type = "button";
+    loadMore.className = "ghost small full";
+    loadMore.textContent = state.conversationsLoadingMore ? "Carregando..." : "Carregar mais";
+    loadMore.disabled = state.conversationsLoadingMore;
+    loadMore.addEventListener("click", () => loadConversations({ append: true, silent: true }));
+    conversationListEl.appendChild(loadMore);
+  }
+
   updateReminderConversationOptions();
 
 }
@@ -4409,17 +4423,52 @@ async function loadConversations(options = {}) {
 
   try {
 
+    const append = Boolean(options.append);
+    if (append && (state.conversationsLoadingMore || !state.conversationsHasMore)) {
+      return;
+    }
+    if (append) {
+      state.conversationsLoadingMore = true;
+    } else {
+      state.conversationsOffset = 0;
+      state.conversationsHasMore = true;
+    }
+
     let url = "/api/conversations";
+    const params = new URLSearchParams();
+    const limit = state.conversationsPageSize || 150;
+    params.set("limit", String(limit));
 
     if (state.user?.is_admin) {
 
       const scope = state.viewAllConversations ? "all" : "mine";
 
-      url += `?scope=${scope}`;
+      params.set("scope", scope);
 
     }
 
-    state.conversations = sortConversationsForSidebar(await fetchJson(url));
+    const offset = append ? state.conversationsOffset || 0 : 0;
+    if (offset) {
+      params.set("offset", String(offset));
+    }
+    const qs = params.toString();
+    if (qs) {
+      url += `?${qs}`;
+    }
+
+    const fetched = await fetchJson(url);
+    const incoming = sortConversationsForSidebar(fetched);
+    if (append) {
+      const index = new Map((state.conversations || []).map((c) => [c.id, c]));
+      incoming.forEach((c) => index.set(c.id, c));
+      state.conversations = sortConversationsForSidebar(Array.from(index.values()));
+    } else {
+      state.conversations = incoming;
+    }
+
+    const pinnedCount = (state.conversations || []).filter((c) => c?.is_pinned).length;
+    state.conversationsOffset = Math.max(0, (state.conversations || []).length - pinnedCount);
+    state.conversationsHasMore = Array.isArray(fetched) && fetched.length === limit;
 
     seedConversationAvatars(state.conversations);
 
@@ -4434,6 +4483,9 @@ async function loadConversations(options = {}) {
       alert(error.message);
     }
 
+  }
+  finally {
+    state.conversationsLoadingMore = false;
   }
 
 }
@@ -7780,6 +7832,8 @@ if (scopeButtons.length) {
       if (state.viewAllConversations === shouldViewAll) return;
 
       state.viewAllConversations = shouldViewAll;
+      state.conversationsOffset = 0;
+      state.conversationsHasMore = true;
 
       updateScopeControls();
 

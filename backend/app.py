@@ -1910,24 +1910,21 @@ def list_conversations(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
     scope: str = Query("mine", regex="^(mine|all)$"),
+    limit: int = Query(150, ge=1, le=1000),
+    offset: int = Query(0, ge=0, le=100000),
 ) -> List[ConversationSummary]:
-    query = select(Conversation).where(
+    base_query = select(Conversation).where(
         Conversation.organization_id == current_user.organization_id
     )
     if not current_user.is_admin or scope != "all":
-        query = query.where(Conversation.owner_user_id == current_user.id)
-    conversations = session.exec(
-        query.order_by(Conversation.updated_at.desc())
-    ).all()
-    conversation_ids = [conversation.id for conversation in conversations]
+        base_query = base_query.where(Conversation.owner_user_id == current_user.id)
+
     pinned_ids: set[int] = set()
     pinned_at_map: dict[int, datetime] = {}
-    if conversation_ids:
+    pinned_conversations: List[Conversation] = []
+    if offset == 0:
         pinned_rows = session.exec(
-            select(ConversationPin).where(
-                ConversationPin.user_id == current_user.id,
-                ConversationPin.conversation_id.in_(conversation_ids),
-            )
+            select(ConversationPin).where(ConversationPin.user_id == current_user.id)
         ).all()
         pinned_at_map = {
             entry.conversation_id: entry.created_at
@@ -1935,14 +1932,33 @@ def list_conversations(
             if entry.conversation_id is not None
         }
         pinned_ids = set(pinned_at_map.keys())
-        conversations.sort(
-            key=lambda conversation: (
-                conversation.id in pinned_ids,
-                pinned_at_map.get(conversation.id, datetime.min),
-                conversation.updated_at,
-            ),
-            reverse=True,
-        )
+        if pinned_ids:
+            pinned_conversations = session.exec(
+                base_query.where(Conversation.id.in_(pinned_ids))
+            ).all()
+            pinned_conversations.sort(
+                key=lambda conversation: pinned_at_map.get(conversation.id, datetime.min),
+                reverse=True,
+            )
+
+    conversations: List[Conversation] = []
+    if pinned_conversations:
+        conversations.extend(pinned_conversations[:limit])
+    remaining = max(limit - len(conversations), 0)
+    if remaining > 0:
+        unpinned_query = base_query
+        if pinned_ids:
+            unpinned_query = unpinned_query.where(~Conversation.id.in_(pinned_ids))
+        unpinned = session.exec(
+            unpinned_query.order_by(Conversation.updated_at.desc(), Conversation.id.desc())
+            .offset(offset)
+            .limit(remaining)
+        ).all()
+        conversations.extend(unpinned)
+
+    conversation_ids = [conversation.id for conversation in conversations if conversation.id]
+    if pinned_ids and conversation_ids:
+        pinned_ids = pinned_ids.intersection(set(conversation_ids))
     unread_counts: Dict[int, int] = {}
     if conversation_ids:
         unread_rows = session.exec(
@@ -1961,6 +1977,23 @@ def list_conversations(
     avatar_map: Dict[int, ConversationAvatar] = {
         entry.conversation_id: entry for entry in avatar_rows if entry.conversation_id
     }
+    tags_map: Dict[int, List[TagRead]] = {}
+    if conversation_ids:
+        tag_rows = session.exec(
+            select(ConversationTagLink.conversation_id, Tag)
+            .join(Tag, Tag.id == ConversationTagLink.tag_id)
+            .where(ConversationTagLink.conversation_id.in_(conversation_ids))
+            .where(
+                (Tag.owner_user_id == None)  # noqa: E711
+                | (Tag.owner_user_id == current_user.id)
+            )
+        ).all()
+        collected: Dict[int, List[TagRead]] = {}
+        for conversation_id, tag in tag_rows:
+            if not conversation_id or not tag:
+                continue
+            collected.setdefault(conversation_id, []).append(TagRead.model_validate(tag))
+        tags_map = collected
     last_message_map: Dict[int, Message] = {}
     if conversation_ids:
         last_message_rows = session.exec(
@@ -1982,7 +2015,7 @@ def list_conversations(
             }
     summaries: List[ConversationSummary] = []
     for conversation in conversations:
-        tag_reads = visible_tags_for_user(conversation.tags, current_user)
+        tag_reads = tags_map.get(conversation.id, [])
         last_message = last_message_map.get(conversation.id)
         avatar_entry = avatar_map.get(conversation.id)
         avatar_url: Optional[str] = None
