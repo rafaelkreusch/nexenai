@@ -19,7 +19,21 @@ def _create_engine(url: str) -> Tuple[Engine, bool]:
     connect_args: dict = {}
     if is_sqlite:
         connect_args["check_same_thread"] = False
-    engine = create_engine(url, echo=False, **({"connect_args": connect_args} if connect_args else {}))
+    engine_kwargs: dict = {"echo": False}
+    if connect_args:
+        engine_kwargs["connect_args"] = connect_args
+    if not is_sqlite:
+        connect_args.setdefault(
+            "connect_timeout", int(os.getenv("DB_CONNECT_TIMEOUT", "10"))
+        )
+        engine_kwargs.update(
+            pool_pre_ping=True,
+            pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
+            pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
+            pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
+            max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "2")),
+        )
+    engine = create_engine(url, **engine_kwargs)
     return engine, is_sqlite
 
 

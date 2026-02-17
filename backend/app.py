@@ -1961,14 +1961,29 @@ def list_conversations(
     avatar_map: Dict[int, ConversationAvatar] = {
         entry.conversation_id: entry for entry in avatar_rows if entry.conversation_id
     }
+    last_message_map: Dict[int, Message] = {}
+    if conversation_ids:
+        last_message_rows = session.exec(
+            select(Message.conversation_id, func.max(Message.id))
+            .where(Message.conversation_id.in_(conversation_ids))
+            .group_by(Message.conversation_id)
+        ).all()
+        last_message_ids = [
+            message_id for _, message_id in last_message_rows if message_id is not None
+        ]
+        if last_message_ids:
+            last_messages = session.exec(
+                select(Message).where(Message.id.in_(last_message_ids))
+            ).all()
+            last_message_map = {
+                entry.conversation_id: entry
+                for entry in last_messages
+                if entry.conversation_id is not None
+            }
     summaries: List[ConversationSummary] = []
     for conversation in conversations:
         tag_reads = visible_tags_for_user(conversation.tags, current_user)
-        last_message = session.exec(
-            select(Message)
-            .where(Message.conversation_id == conversation.id)
-            .order_by(Message.timestamp.desc())
-        ).first()
+        last_message = last_message_map.get(conversation.id)
         avatar_entry = avatar_map.get(conversation.id)
         avatar_url: Optional[str] = None
         avatar_updated_at = avatar_entry.updated_at if avatar_entry else None
