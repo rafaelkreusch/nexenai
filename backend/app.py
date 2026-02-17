@@ -1912,6 +1912,8 @@ def list_conversations(
     scope: str = Query("mine", regex="^(mine|all)$"),
     limit: int = Query(150, ge=1, le=1000),
     offset: int = Query(0, ge=0, le=100000),
+    before_updated_at: Optional[datetime] = Query(None),
+    before_conversation_id: Optional[int] = Query(None, ge=1),
 ) -> List[ConversationSummary]:
     base_query = select(Conversation).where(
         Conversation.organization_id == current_user.organization_id
@@ -1922,7 +1924,7 @@ def list_conversations(
     pinned_ids: set[int] = set()
     pinned_at_map: dict[int, datetime] = {}
     pinned_conversations: List[Conversation] = []
-    if offset == 0:
+    if offset == 0 and before_updated_at is None:
         pinned_rows = session.exec(
             select(ConversationPin).where(ConversationPin.user_id == current_user.id)
         ).all()
@@ -1949,9 +1951,23 @@ def list_conversations(
         unpinned_query = base_query
         if pinned_ids:
             unpinned_query = unpinned_query.where(~Conversation.id.in_(pinned_ids))
+        if before_updated_at is not None:
+            if before_conversation_id is not None:
+                unpinned_query = unpinned_query.where(
+                    or_(
+                        Conversation.updated_at < before_updated_at,
+                        (Conversation.updated_at == before_updated_at)
+                        & (Conversation.id < before_conversation_id),
+                    )
+                )
+            else:
+                unpinned_query = unpinned_query.where(
+                    Conversation.updated_at < before_updated_at
+                )
+        effective_offset = 0 if before_updated_at is not None else offset
         unpinned = session.exec(
             unpinned_query.order_by(Conversation.updated_at.desc(), Conversation.id.desc())
-            .offset(offset)
+            .offset(effective_offset)
             .limit(remaining)
         ).all()
         conversations.extend(unpinned)
@@ -2022,17 +2038,30 @@ def list_conversations(
         avatar_updated_at = avatar_entry.updated_at if avatar_entry else None
         if avatar_entry and avatar_entry.media_path:
             avatar_url = build_public_media_url(avatar_entry.media_path, request)
+        preview: Optional[str] = None
+        if last_message:
+            content = (last_message.content or "").strip()
+            if content:
+                preview = content[:default_message_preview_length]
+            else:
+                if last_message.message_type == MessageType.audio:
+                    preview = "Áudio"
+                elif last_message.message_type == MessageType.image:
+                    preview = "Imagem"
+                elif last_message.message_type == MessageType.document:
+                    preview = "Documento"
+                elif last_message.media_path:
+                    preview = "Mídia"
+                else:
+                    preview = "Mensagem"
         summaries.append(
             ConversationSummary(
                 id=conversation.id,
                 debtor_name=conversation.debtor_name,
                 debtor_phone=conversation.debtor_phone,
+                updated_at=conversation.updated_at,
                 last_message_at=last_message.timestamp if last_message else None,
-                last_message_preview=(
-                    (last_message.content or "")[:default_message_preview_length]
-                    if last_message
-                    else None
-                ),
+                last_message_preview=preview,
                 owner_user_id=conversation.owner_user_id,
                 tags=tag_reads,
                 unread_count=unread_counts.get(conversation.id, 0),

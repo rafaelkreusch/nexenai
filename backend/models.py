@@ -154,6 +154,7 @@ class ConversationSummary(SQLModel):
     id: int
     debtor_name: str
     debtor_phone: str
+    updated_at: Optional[datetime] = None
     last_message_preview: Optional[str] = None
     last_message_at: Optional[datetime] = None
     owner_user_id: Optional[int] = None

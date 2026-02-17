@@ -559,6 +559,8 @@ const state = {
   conversationsOffset: 0,
   conversationsHasMore: true,
   conversationsLoadingMore: false,
+  conversationsCursorUpdatedAt: null,
+  conversationsCursorId: null,
 
   activeConversationType: "chats",
 
@@ -4432,6 +4434,8 @@ async function loadConversations(options = {}) {
     } else {
       state.conversationsOffset = 0;
       state.conversationsHasMore = true;
+      state.conversationsCursorUpdatedAt = null;
+      state.conversationsCursorId = null;
     }
 
     let url = "/api/conversations";
@@ -4447,9 +4451,11 @@ async function loadConversations(options = {}) {
 
     }
 
-    const offset = append ? state.conversationsOffset || 0 : 0;
-    if (offset) {
-      params.set("offset", String(offset));
+    const beforeUpdatedAt = append ? state.conversationsCursorUpdatedAt : null;
+    const beforeConversationId = append ? state.conversationsCursorId : null;
+    if (beforeUpdatedAt && beforeConversationId) {
+      params.set("before_updated_at", beforeUpdatedAt);
+      params.set("before_conversation_id", String(beforeConversationId));
     }
     const qs = params.toString();
     if (qs) {
@@ -4457,7 +4463,8 @@ async function loadConversations(options = {}) {
     }
 
     const fetched = await fetchJson(url);
-    const incoming = sortConversationsForSidebar(fetched);
+    const fetchedList = Array.isArray(fetched) ? fetched : [];
+    const incoming = sortConversationsForSidebar(fetchedList);
     if (append) {
       const index = new Map((state.conversations || []).map((c) => [c.id, c]));
       incoming.forEach((c) => index.set(c.id, c));
@@ -4466,9 +4473,18 @@ async function loadConversations(options = {}) {
       state.conversations = incoming;
     }
 
-    const pinnedCount = (state.conversations || []).filter((c) => c?.is_pinned).length;
-    state.conversationsOffset = Math.max(0, (state.conversations || []).length - pinnedCount);
-    state.conversationsHasMore = Array.isArray(fetched) && fetched.length === limit;
+    const cursorCandidate = (() => {
+      for (let i = fetchedList.length - 1; i >= 0; i -= 1) {
+        const c = fetchedList[i];
+        if (c && !c.is_pinned) return c;
+      }
+      return fetchedList[fetchedList.length - 1] || null;
+    })();
+    if (cursorCandidate?.updated_at && cursorCandidate?.id) {
+      state.conversationsCursorUpdatedAt = String(cursorCandidate.updated_at);
+      state.conversationsCursorId = Number(cursorCandidate.id);
+    }
+    state.conversationsHasMore = fetchedList.length === limit;
 
     seedConversationAvatars(state.conversations);
 
@@ -4486,6 +4502,9 @@ async function loadConversations(options = {}) {
   }
   finally {
     state.conversationsLoadingMore = false;
+    if (options.append) {
+      renderConversations();
+    }
   }
 
 }
@@ -7834,6 +7853,8 @@ if (scopeButtons.length) {
       state.viewAllConversations = shouldViewAll;
       state.conversationsOffset = 0;
       state.conversationsHasMore = true;
+      state.conversationsCursorUpdatedAt = null;
+      state.conversationsCursorId = null;
 
       updateScopeControls();
 
