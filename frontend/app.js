@@ -4231,7 +4231,8 @@ function renderConversations(conversations = state.conversations) {
       preview.innerHTML = `<span class="draft-label">Rascunho:</span> ${escapeHtml(snippet)}`;
     } else {
       preview.classList.remove("is-draft");
-      preview.textContent = conversation.last_message_preview || "Sem mensagens";
+      preview.textContent =
+        conversation.last_message_preview || (conversation.last_message_at ? "Mensagem" : "Sem mensagens");
     }
 
     const time = document.createElement("div");
@@ -5284,54 +5285,144 @@ function clearUnreadForActiveConversation() {
 function appendAudioMessage(container, message) {
 
   const wrapper = document.createElement("div");
-
   wrapper.className = "audio-wrapper";
 
-  if (message.media_url) {
-
-    const audioEl = document.createElement("audio");
-
-    audioEl.controls = true;
-
-    audioEl.preload = "none";
-
-    audioEl.src = message.media_url;
-
-    audioEl.dataset.messageId = message.id;
-
-    wrapper.appendChild(audioEl);
-
-  } else {
-
+  if (!message.media_url) {
     const fallback = document.createElement("p");
-
     fallback.className = "audio-caption";
-
     fallback.textContent = "Áudio indisponível.";
-
     wrapper.appendChild(fallback);
-
+    container.appendChild(wrapper);
+    return;
   }
 
-  if (message.media_duration_seconds) {
+  const formatClock = (totalSeconds) => {
+    const value = Number(totalSeconds);
+    if (!Number.isFinite(value) || value < 0) return "0:00";
+    const seconds = Math.floor(value);
+    const minutes = Math.floor(seconds / 60);
+    const remaining = String(seconds % 60).padStart(2, "0");
+    return `${minutes}:${remaining}`;
+  };
 
-    const duration = document.createElement("small");
+  const PLAY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 5v14l11-7z"/></svg>`;
+  const PAUSE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>`;
 
-    duration.className = "muted";
+  const player = document.createElement("div");
+  player.className = "audio-player";
+  player.dataset.messageId = String(message.id || "");
 
-    const seconds = Math.round(Number(message.media_duration_seconds));
+  const playButton = document.createElement("button");
+  playButton.type = "button";
+  playButton.className = "audio-play";
+  playButton.setAttribute("aria-label", "Reproduzir áudio");
+  playButton.innerHTML = PLAY_ICON;
 
-    const minutes = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const track = document.createElement("div");
+  track.className = "audio-track";
 
-    const sec = String(seconds % 60).padStart(2, "0");
+  const range = document.createElement("input");
+  range.className = "audio-range";
+  range.type = "range";
+  range.min = "0";
+  range.max = "1000";
+  range.value = "0";
+  range.step = "1";
+  range.setAttribute("aria-label", "Progresso do áudio");
 
-    duration.textContent = `Duração ${minutes}:${sec}`;
+  const meta = document.createElement("div");
+  meta.className = "audio-meta";
 
-    wrapper.appendChild(duration);
+  const current = document.createElement("span");
+  current.className = "audio-time";
+  current.textContent = "0:00";
 
-  }
+  const total = document.createElement("span");
+  total.className = "audio-duration";
+  total.textContent = formatClock(message.media_duration_seconds || 0);
 
+  meta.append(current, total);
+  track.append(range, meta);
+
+  const audioEl = document.createElement("audio");
+  audioEl.preload = "none";
+  audioEl.src = message.media_url;
+  audioEl.dataset.messageId = String(message.id || "");
+
+  player.append(playButton, track, audioEl);
+  wrapper.appendChild(player);
   container.appendChild(wrapper);
+
+  const stopOtherAudios = () => {
+    document.querySelectorAll(".audio-player audio").forEach((node) => {
+      if (node === audioEl) return;
+      try {
+        node.pause?.();
+      } catch {
+        // ignore
+      }
+    });
+    document.querySelectorAll(".audio-player .audio-play").forEach((node) => {
+      if (node === playButton) return;
+      if (node instanceof HTMLElement) {
+        node.innerHTML = PLAY_ICON;
+        node.setAttribute("aria-label", "Reproduzir áudio");
+      }
+    });
+  };
+
+  const syncUi = () => {
+    const duration = Number.isFinite(audioEl.duration) && audioEl.duration > 0 ? audioEl.duration : (Number(message.media_duration_seconds) || 0);
+    const currentTime = Number(audioEl.currentTime) || 0;
+    current.textContent = formatClock(currentTime);
+    if (!Number(message.media_duration_seconds) && duration) {
+      total.textContent = formatClock(duration);
+    }
+    if (duration > 0) {
+      const percent = Math.max(0, Math.min(1, currentTime / duration));
+      range.value = String(Math.round(percent * 1000));
+    } else {
+      range.value = "0";
+    }
+  };
+
+  audioEl.addEventListener("timeupdate", syncUi);
+  audioEl.addEventListener("loadedmetadata", syncUi);
+  audioEl.addEventListener("ended", () => {
+    playButton.innerHTML = PLAY_ICON;
+    playButton.setAttribute("aria-label", "Reproduzir áudio");
+    range.value = "0";
+    current.textContent = "0:00";
+  });
+  audioEl.addEventListener("pause", () => {
+    playButton.innerHTML = PLAY_ICON;
+    playButton.setAttribute("aria-label", "Reproduzir áudio");
+  });
+  audioEl.addEventListener("play", () => {
+    playButton.innerHTML = PAUSE_ICON;
+    playButton.setAttribute("aria-label", "Pausar áudio");
+  });
+
+  playButton.addEventListener("click", async () => {
+    try {
+      if (!audioEl.paused) {
+        audioEl.pause();
+        return;
+      }
+      stopOtherAudios();
+      await audioEl.play();
+    } catch (error) {
+      console.error("Falha ao reproduzir áudio", error);
+    }
+  });
+
+  range.addEventListener("input", () => {
+    const duration = Number.isFinite(audioEl.duration) && audioEl.duration > 0 ? audioEl.duration : (Number(message.media_duration_seconds) || 0);
+    if (duration <= 0) return;
+    const percent = Number(range.value) / 1000;
+    audioEl.currentTime = Math.max(0, Math.min(duration, percent * duration));
+    syncUi();
+  });
 
 }
 
@@ -8391,7 +8482,8 @@ function updateDashboard() {
       const title = document.createElement("strong");
       title.textContent = conversation.debtor_name || conversation.debtor_phone || `ID ${conversation.id}`;
       const subtitle = document.createElement("small");
-      const preview = conversation.last_message_preview || "Sem mensagens";
+      const preview =
+        conversation.last_message_preview || (conversation.last_message_at ? "Mensagem" : "Sem mensagens");
       const when = formatTimestamp(conversation.last_message_at);
       subtitle.textContent = `${preview} • ${when || "Sem data"}`;
       li.append(title, subtitle);

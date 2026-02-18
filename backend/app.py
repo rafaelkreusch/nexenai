@@ -2010,25 +2010,44 @@ def list_conversations(
                 continue
             collected.setdefault(conversation_id, []).append(TagRead.model_validate(tag))
         tags_map = collected
-    last_message_map: Dict[int, Message] = {}
+    last_message_map: Dict[int, Any] = {}
     if conversation_ids:
-        last_message_rows = session.exec(
-            select(Message.conversation_id, func.max(Message.id))
+        last_message_ranked = (
+            select(
+                Message.conversation_id.label("conversation_id"),
+                Message.timestamp.label("timestamp"),
+                Message.content.label("content"),
+                Message.message_type.label("message_type"),
+                Message.media_path.label("media_path"),
+                func.row_number()
+                .over(
+                    partition_by=Message.conversation_id,
+                    order_by=(Message.timestamp.desc(), Message.id.desc()),
+                )
+                .label("rn"),
+            )
             .where(Message.conversation_id.in_(conversation_ids))
-            .group_by(Message.conversation_id)
+            .subquery()
+        )
+        rows = session.exec(
+            select(
+                last_message_ranked.c.conversation_id,
+                last_message_ranked.c.timestamp,
+                last_message_ranked.c.content,
+                last_message_ranked.c.message_type,
+                last_message_ranked.c.media_path,
+            ).where(last_message_ranked.c.rn == 1)
         ).all()
-        last_message_ids = [
-            message_id for _, message_id in last_message_rows if message_id is not None
-        ]
-        if last_message_ids:
-            last_messages = session.exec(
-                select(Message).where(Message.id.in_(last_message_ids))
-            ).all()
-            last_message_map = {
-                entry.conversation_id: entry
-                for entry in last_messages
-                if entry.conversation_id is not None
+        last_message_map = {
+            conversation_id: {
+                "timestamp": timestamp,
+                "content": content,
+                "message_type": message_type,
+                "media_path": media_path,
             }
+            for conversation_id, timestamp, content, message_type, media_path in rows
+            if conversation_id is not None
+        }
     summaries: List[ConversationSummary] = []
     for conversation in conversations:
         tag_reads = tags_map.get(conversation.id, [])
@@ -2039,18 +2058,22 @@ def list_conversations(
         if avatar_entry and avatar_entry.media_path:
             avatar_url = build_public_media_url(avatar_entry.media_path, request)
         preview: Optional[str] = None
+        last_message_at: Optional[datetime] = None
         if last_message:
-            content = (last_message.content or "").strip()
+            last_message_at = last_message.get("timestamp")
+            content = (last_message.get("content") or "").strip()
             if content:
                 preview = content[:default_message_preview_length]
             else:
-                if last_message.message_type == MessageType.audio:
+                message_type = str(last_message.get("message_type") or "").strip().lower()
+                media_path = last_message.get("media_path")
+                if message_type == MessageType.audio.value:
                     preview = "Áudio"
-                elif last_message.message_type == MessageType.image:
+                elif message_type == MessageType.image.value:
                     preview = "Imagem"
-                elif last_message.message_type == MessageType.document:
+                elif message_type == MessageType.document.value:
                     preview = "Documento"
-                elif last_message.media_path:
+                elif media_path:
                     preview = "Mídia"
                 else:
                     preview = "Mensagem"
@@ -2060,7 +2083,7 @@ def list_conversations(
                 debtor_name=conversation.debtor_name,
                 debtor_phone=conversation.debtor_phone,
                 updated_at=conversation.updated_at,
-                last_message_at=last_message.timestamp if last_message else None,
+                last_message_at=last_message_at,
                 last_message_preview=preview,
                 owner_user_id=conversation.owner_user_id,
                 tags=tag_reads,
