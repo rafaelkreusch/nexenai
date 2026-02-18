@@ -3969,6 +3969,17 @@ def login(payload: AuthLogin, session: Session = Depends(get_session)) -> AuthRe
 
 @app.post("/api/auth/register", response_model=AuthResponse)
 def register(payload: AuthRegister, session: Session = Depends(get_session)) -> AuthResponse:
+    allow_registration = str(os.getenv("ALLOW_PUBLIC_REGISTRATION", "0")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not allow_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Auto-cadastro desativado. Solicite acesso ao administrador.",
+        )
     slug = slugify(payload.organization_slug)
     username = normalize_username(payload.username)
     existing = session.exec(select(Organization).where(Organization.slug == slug)).first()
