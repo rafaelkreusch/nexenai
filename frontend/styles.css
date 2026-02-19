@@ -2175,8 +2175,11 @@ button.reminder-trigger .reminder-trigger-label {
   height: 28px;
   border-radius: 50%;
   color: #4f46e5;
-  font-size: 1.2rem;
+  padding: 0;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .calendar-week-nav span {
