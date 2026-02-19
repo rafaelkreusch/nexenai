@@ -119,6 +119,15 @@
 
       <div class="auth-container">
 
+        <div class="auth-tabs">
+
+          <button data-auth-view="login" class="active">Entrar</button>
+
+          <button data-auth-view="register">Criar conta</button>
+
+        </div>
+
+
 
         <form id="loginForm" class="auth-card" method="post" autocomplete="off">
 
@@ -144,7 +153,7 @@
 
             pattern="[a-z0-9._]+"
 
-            placeholder="ex: nome.sobrenome01"
+            placeholder="Usuário"
 
           />
 
@@ -160,6 +169,53 @@
 
         </form>
 
+
+
+        <form id="registerForm" class="auth-card hidden" method="post" autocomplete="off">
+
+          <img src="/static/assets/logosemfdbranca.png" alt="Nexen.ai" class="auth-logo" />
+
+          <h1>Criar conta</h1>
+
+          <p>Cadastre sua empresa para usar a Nexen.ai</p>
+
+          <label for="orgName">Nome da empresa</label>
+
+          <input type="text" id="orgName" required />
+
+          <label for="orgSlug">Endereço (slug)</label>
+
+          <input type="text" id="orgSlug" placeholder="ex: minha_empresa" required />
+
+          <label for="registerFullName">Nome completo</label>
+
+          <input type="text" id="registerFullName" placeholder="" />
+
+          <label for="registerUsername">Usuário principal <small>(ex: nome.sobrenome01)</small></label>
+
+          <input
+
+            type="text"
+
+            id="registerUsername"
+
+            required
+
+            pattern="[a-z0-9._]+"
+
+            placeholder="ex: nome.sobrenome01"
+
+          />
+
+          <label for="registerPassword">Senha</label>
+
+          <input type="password" id="registerPassword" required />
+
+          <button type="submit" class="primary">Criar e acessar</button>
+
+          <p id="registerError" class="form-error" aria-live="polite"></p>
+
+        </form>
 
       </div>
 
@@ -1122,11 +1178,21 @@
       <p id="calendarEventModalNotes" class="note"></p>
       <div class="calendar-event-modal-actions">
         <button type="button" id="calendarEventModalConversation" class="primary ghost">
-          Abrir conversa
+          <span class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/>
+              <path d="m10 15-3-3 3-3"/>
+              <path d="M7 12h8a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </span>
+          <span>Abrir conversa</span>
         </button>
         <button type="button" id="calendarEventModalComplete" class="ghost icon-button" aria-label="Concluir atividade">
           <span class="icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="m9 12 2 2 4-4"/>
+            </svg>
           </span>
         </button>
         <button type="button" id="calendarEventModalCancel" class="ghost icon-button danger" aria-label="Cancelar atividade">

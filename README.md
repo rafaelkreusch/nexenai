@@ -1,6 +1,6 @@
-﻿# Chat de Valor
+﻿# Nexen.ai
 
-Interface web estilo WhatsApp com autenticação multiempresa. Cada organização tem seus usuários, integrações Evolution e histórico próprio.
+Interface web estilo WhatsApp com autenticação multiempresa. Cada organização tem seus usuários, integrações e histórico próprio.
 
 ## Requisitos
 

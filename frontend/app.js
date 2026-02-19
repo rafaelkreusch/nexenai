@@ -581,6 +581,7 @@ const state = {
 
   reminderPollHandle: null,
   pendingReminderConversationId: null,
+  reminderModalOriginPanel: null,
   messagesSignature: null,
   notesSignature: null,
   latestMessages: [],
@@ -8029,7 +8030,16 @@ if (calendarTodayButton) {
 
 if (calendarNewEventButton) {
   calendarNewEventButton.addEventListener("click", () => {
-    alert("Registro de novos compromissos estará disponível em breve. Por enquanto, utilize os lembretes.");
+    const now = new Date();
+    const roundMinutes = 15;
+    const rounded = new Date(now);
+    rounded.setSeconds(0, 0);
+    const minutes = rounded.getMinutes();
+    const remainder = minutes % roundMinutes;
+    if (remainder !== 0) {
+      rounded.setMinutes(minutes + (roundMinutes - remainder));
+    }
+    openReminderModal(null, { originPanel: "calendar", prefillDueAt: rounded });
   });
 }
 
@@ -11129,13 +11139,16 @@ function renderReminderList() {
 
 
 
-function openReminderModal(preselectConversationId = null) {
+function openReminderModal(preselectConversationId = null, options = {}) {
 
   if (!reminderModal) return;
 
   reminderModal.classList.remove("hidden");
 
   reminderModal.setAttribute("aria-hidden", "false");
+
+  const originPanel = options?.originPanel || "conversations";
+  state.reminderModalOriginPanel = originPanel;
 
   if (preselectConversationId) {
 
@@ -11161,9 +11174,18 @@ function openReminderModal(preselectConversationId = null) {
 
   }
 
+  if (reminderDueInput && !reminderDueInput.value && options?.prefillDueAt instanceof Date) {
+    const due = options.prefillDueAt;
+    const pad = (value) => String(value).padStart(2, "0");
+    const localValue = `${due.getFullYear()}-${pad(due.getMonth() + 1)}-${pad(due.getDate())}T${pad(
+      due.getHours()
+    )}:${pad(due.getMinutes())}`;
+    reminderDueInput.value = localValue;
+  }
+
   reminderFormError.textContent = "";
 
-  setActiveNav("conversations");
+  setActiveNav(originPanel);
 
   loadReminders();
 
@@ -11181,11 +11203,12 @@ function closeReminderModal(force = false) {
 
   if (force) {
 
-    setActiveNav("conversations");
+    setActiveNav(state.reminderModalOriginPanel || "conversations");
 
   }
 
   state.pendingReminderConversationId = null;
+  state.reminderModalOriginPanel = null;
 
 }
 
