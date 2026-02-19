@@ -88,6 +88,7 @@ class CollaboratorOrganizationRead(SQLModel):
 class OrganizationUpdate(SQLModel):
     is_active: Optional[bool] = None
     user_limit: Optional[int] = None
+    webhook_url: Optional[str] = None
 
 
 class ConversationBase(SQLModel):
