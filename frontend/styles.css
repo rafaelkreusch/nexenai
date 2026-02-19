@@ -7670,25 +7670,17 @@ body.image-preview-open {
 
 .settings-shell,
 #settingsModal {
-  --settings-brand-primary: #221181;
-  --settings-brand-secondary: #2b168c;
-  --settings-brand-accent: #a53eb4;
-  --settings-on-brand: #f6f2ff;
-  --settings-on-brand-muted: rgba(246, 242, 255, 0.7);
-  --settings-brand-border: rgba(34, 17, 129, 0.22);
-  --settings-brand-shadow: rgba(16, 10, 64, 0.22);
-  --settings-surface: rgba(11, 8, 30, 0.96);
-  --settings-surface-2: rgba(34, 17, 129, 0.18);
+  --settings-on-brand: rgba(255, 255, 255, 0.92);
+  --settings-on-brand-muted: rgba(255, 255, 255, 0.72);
+  --settings-brand-border: rgba(255, 255, 255, 0.10);
 }
 
 #settingsModal .modal-content {
-  background: radial-gradient(circle at 15% 10%, rgba(34, 17, 129, 0.55), transparent 55%),
-    radial-gradient(circle at 85% 20%, rgba(165, 62, 180, 0.35), transparent 50%),
-    linear-gradient(180deg, rgba(11, 8, 30, 0.98), rgba(7, 5, 20, 0.98));
-  border: 1px solid var(--settings-brand-border);
+  background: #202326;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--settings-on-brand);
   --muted: var(--settings-on-brand-muted);
-  --border: rgba(246, 242, 255, 0.18);
+  --border: rgba(255, 255, 255, 0.10);
 }
 
 #settingsModal .eyebrow,
@@ -7696,30 +7688,58 @@ body.image-preview-open {
   color: var(--settings-on-brand-muted);
 }
 
+#settingsModal .modal-header {
+  align-items: flex-start;
+}
+
+#settingsModal .modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
 #settingsModal .modal-header button {
   background: rgba(246, 242, 255, 0.08);
   color: var(--settings-on-brand);
   border: 1px solid rgba(246, 242, 255, 0.12);
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 #settingsModal .modal-header button:hover {
-  background: rgba(165, 62, 180, 0.18);
-  border-color: rgba(165, 62, 180, 0.45);
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+#settingsModal .modal-header button:focus-visible {
+  outline: 2px solid rgba(205, 92, 221, 0.55);
+  outline-offset: 2px;
+}
+
+#settingsModal .modal-header button svg {
+  display: block;
 }
 
 #settingsModal .department-item {
   border-color: var(--settings-brand-border);
-  background: rgba(246, 242, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--settings-on-brand);
 }
 
 #settingsModal .department-item:hover {
-  background: rgba(246, 242, 255, 0.09);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 #settingsModal .department-item.active {
-  border-color: rgba(165, 62, 180, 0.65);
-  background: rgba(165, 62, 180, 0.18);
+  border-color: rgba(205, 92, 221, 0.55);
+  background: rgba(205, 92, 221, 0.16);
 }
 
 #settingsModal .department-item-meta {
@@ -7748,17 +7768,23 @@ body.image-preview-open {
   gap: 0.9rem;
   padding: 1.05rem 1.1rem;
   border-radius: 22px;
-  border: 1px solid var(--settings-brand-border);
-  background: linear-gradient(135deg, rgba(34, 17, 129, 0.98), rgba(43, 22, 140, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(20, 22, 25, 0.55);
   color: var(--settings-on-brand);
-  box-shadow: 0 22px 50px var(--settings-brand-shadow);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.45);
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.settings-nav-item::before {
+  display: none;
 }
 
 .settings-nav-item:hover {
   transform: translateY(-1px);
-  border-color: rgba(165, 62, 180, 0.75);
-  box-shadow: 0 26px 60px rgba(16, 10, 64, 0.28);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.55);
 }
 
 .settings-nav-icon {
@@ -7767,7 +7793,8 @@ body.image-preview-open {
   display: grid;
   place-items: center;
   border-radius: 16px;
-  background: rgba(246, 242, 255, 0.12);
+  background: transparent;
+  border: none;
   font-size: 1.1rem;
   flex: 0 0 auto;
 }
@@ -7816,7 +7843,7 @@ body.image-preview-open {
 
 .settings-card {
 
-  background: linear-gradient(180deg, var(--settings-surface), rgba(11, 8, 30, 0.92));
+  background: rgba(20, 22, 25, 0.55);
 
   border-radius: 22px;
 
@@ -7828,9 +7855,9 @@ body.image-preview-open {
 
   gap: 1rem;
 
-  border: 1px solid var(--settings-brand-border);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 
-  box-shadow: 0 25px 55px rgba(16, 10, 64, 0.18);
+  box-shadow: 0 25px 55px rgba(0, 0, 0, 0.45);
 
   color: var(--settings-on-brand);
 
@@ -7858,13 +7885,13 @@ body.image-preview-open {
 
 .summary-card {
 
-  background: linear-gradient(140deg, rgba(34, 17, 129, 0.95), rgba(11, 8, 30, 0.98));
+  background: rgba(20, 22, 25, 0.55);
 
   color: var(--settings-on-brand);
 
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 
-  box-shadow: 0 30px 60px rgba(16, 10, 64, 0.46);
+  box-shadow: 0 25px 55px rgba(0, 0, 0, 0.45);
 
 }
 
@@ -7946,7 +7973,8 @@ body.image-preview-open {
 
   border-radius: 14px;
 
-  background: rgba(15, 23, 42, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 
   padding: 0.9rem 1rem;
 
@@ -8008,6 +8036,28 @@ body.image-preview-open {
 
 }
 
+#settingsModal .user-list-pane .pane-header h4,
+#settingsModal .user-list-pane .helper-text {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+#settingsModal .user-form-pane {
+  color: #151624;
+}
+
+#settingsModal .user-form-pane .pane-header h4 {
+  color: #0f172a;
+}
+
+#settingsModal .user-form-pane .helper-text {
+  color: #6b7280;
+}
+
+#settingsModal .user-form-pane label,
+#settingsModal .user-form-pane .toggle-field {
+  color: #0f172a;
+}
+
 
 
 .user-list {
@@ -8016,15 +8066,15 @@ body.image-preview-open {
 
   overflow-y: auto;
 
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.10);
 
   border-radius: 18px;
 
   padding: 0.8rem;
 
-  background: #f7f9fc;
+  background: rgba(255, 255, 255, 0.04);
 
-  box-shadow: inset 0 1px 4px rgba(15, 23, 42, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
 }
 
@@ -8042,7 +8092,7 @@ body.image-preview-open {
 
   padding: 0.8rem 0.4rem;
 
-  border-bottom: 1px solid #dfe7f3;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 
   flex-wrap: wrap;
 
@@ -8088,7 +8138,7 @@ body.image-preview-open {
 
   font-size: 0.95rem;
 
-  color: #0f172a;
+  color: rgba(255, 255, 255, 0.92);
 
 }
 
@@ -8096,7 +8146,7 @@ body.image-preview-open {
 
 .user-item-identity span {
 
-  color: #6b7280;
+  color: rgba(255, 255, 255, 0.65);
 
   font-size: 0.85rem;
 
@@ -8118,7 +8168,7 @@ body.image-preview-open {
 
 .user-item-meta {
 
-  color: #94a3b8;
+  color: rgba(255, 255, 255, 0.55);
 
   font-size: 0.78rem;
 

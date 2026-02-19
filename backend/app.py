@@ -3969,47 +3969,9 @@ def login(payload: AuthLogin, session: Session = Depends(get_session)) -> AuthRe
 
 @app.post("/api/auth/register", response_model=AuthResponse)
 def register(payload: AuthRegister, session: Session = Depends(get_session)) -> AuthResponse:
-    allow_registration = str(os.getenv("ALLOW_PUBLIC_REGISTRATION", "0")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    if not allow_registration:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Auto-cadastro desativado. Solicite acesso ao administrador.",
-        )
-    slug = slugify(payload.organization_slug)
-    username = normalize_username(payload.username)
-    existing = session.exec(select(Organization).where(Organization.slug == slug)).first()
-    if existing:
-        raise HTTPException(status_code=409, detail="Organizacao ja existe")
-    organization = Organization(name=payload.organization_name, slug=slug)
-    session.add(organization)
-    session.commit()
-    session.refresh(organization)
-
-    try:
-        user = User(
-            username=username,
-            full_name=payload.full_name,
-            password_hash=get_password_hash(payload.password),
-            organization_id=organization.id,
-            is_admin=True,
-        )
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-    except IntegrityError:
-        session.rollback()
-        raise HTTPException(status_code=409, detail="Usuario ja existe")
-
-    token = create_session_token(user, session)
-    return AuthResponse(
-        token=token.token,
-        user=UserRead.model_validate(user),
-        organization=build_organization_read(organization),
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Auto-cadastro desativado. Solicite acesso ao administrador.",
     )
 
 
