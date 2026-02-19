@@ -8053,11 +8053,16 @@ body.image-preview-open {
 }
 
 #settingsModal .user-form-pane .helper-text {
-  color: #6b7280;
+  color: #6b7280 !important;
 }
 
 #settingsModal .user-form-pane label,
 #settingsModal .user-form-pane .toggle-field {
+  color: #0f172a;
+}
+
+#settingsModal .user-form-pane .pane-header,
+#settingsModal .user-form-pane .pane-header * {
   color: #0f172a;
 }
 

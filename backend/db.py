@@ -79,6 +79,7 @@ def apply_migrations() -> None:
         migrations: Iterable[tuple[str, str, str]] = [
             ("user", "organization_id", "INTEGER REFERENCES organization(id)"),
             ("user", "is_admin", "BOOLEAN DEFAULT 0"),
+            ("user", "is_master_admin", "BOOLEAN DEFAULT 0"),
             ("conversation", "organization_id", "INTEGER REFERENCES organization(id)"),
             ("conversation", "owner_user_id", "INTEGER REFERENCES user(id)"),
             ("devicesession", "organization_id", "INTEGER REFERENCES organization(id)"),
@@ -107,6 +108,7 @@ def apply_migrations() -> None:
                 result = conn.exec_driver_sql(f"PRAGMA table_info('{table}')").fetchall()
                 return any(row[1] == column for row in result)
 
+            master_added = not column_exists("user", "is_master_admin")
             for table, column, ddl in migrations:
                 if not column_exists(table, column):
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
@@ -149,15 +151,21 @@ def apply_migrations() -> None:
             conn.exec_driver_sql(
                 "UPDATE user SET is_admin = 1 WHERE username = ?", ("admin",)
             )
+            if master_added:
+                conn.exec_driver_sql(
+                    "UPDATE user SET is_master_admin = 1 WHERE is_admin = 1"
+                )
         return
 
     if dialect in {"postgresql", "postgres"}:
         pg_migrations: Iterable[tuple[str, str, str]] = [
+            ("user", "is_master_admin", "BOOLEAN DEFAULT FALSE"),
             ("message", "original_content", "TEXT"),
             ("message", "edited_at", "TIMESTAMP"),
             ("message", "edited_by_user_id", "INTEGER"),
         ]
         with engine.begin() as conn:
+            master_added = False
             for table, column, ddl in pg_migrations:
                 exists = conn.execute(
                     text(
@@ -172,7 +180,14 @@ def apply_migrations() -> None:
                 ).fetchone()
                 if exists:
                     continue
-                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+                table_sql = f"\"{table}\"" if table == "user" else table
+                conn.exec_driver_sql(f"ALTER TABLE {table_sql} ADD COLUMN {column} {ddl}")
+                if table == "user" and column == "is_master_admin":
+                    master_added = True
+            if master_added:
+                conn.exec_driver_sql(
+                    "UPDATE \"user\" SET is_master_admin = TRUE WHERE is_admin = TRUE"
+                )
         return
 
     return

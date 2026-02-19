@@ -174,6 +174,20 @@ const sideNavButtons = document.querySelectorAll(".side-nav button[data-panel]")
 const workspace = document.querySelector(".workspace");
 
 const newUserIsAdminInput = document.getElementById("newUserIsAdmin");
+const newUserIsMasterAdminRow = document.getElementById("newUserIsMasterAdminRow");
+const newUserIsMasterAdminInput = document.getElementById("newUserIsMasterAdmin");
+
+if (newUserIsAdminInput && newUserIsMasterAdminRow && newUserIsMasterAdminInput) {
+  const syncMasterToggle = () => {
+    const isAdmin = Boolean(newUserIsAdminInput.checked);
+    newUserIsMasterAdminRow.classList.toggle("hidden", !isAdmin);
+    if (!isAdmin) {
+      newUserIsMasterAdminInput.checked = false;
+    }
+  };
+  syncMasterToggle();
+  newUserIsAdminInput.addEventListener("change", syncMasterToggle);
+}
 
 const conversationSearchInput = document.getElementById("conversationSearch");
 
@@ -9815,6 +9829,10 @@ function handlePanel(panel) {
 
 function switchAuthView(view) {
 
+  if (view !== "login" && !registerForm) {
+    view = "login";
+  }
+
   authTabs.forEach((button) => {
 
     if (button.dataset.authView === view) {
@@ -10172,6 +10190,23 @@ function renderUsers() {
 
   }
 
+  const canManageRoles = Boolean(state.user?.is_master_admin);
+  if (newUserIsAdminInput) {
+    newUserIsAdminInput.disabled = !canManageRoles;
+    if (!canManageRoles) {
+      newUserIsAdminInput.checked = false;
+    }
+  }
+  if (newUserIsMasterAdminRow) {
+    newUserIsMasterAdminRow.classList.toggle(
+      "hidden",
+      !canManageRoles || !Boolean(newUserIsAdminInput?.checked)
+    );
+  }
+  if (newUserIsMasterAdminInput && (!canManageRoles || !Boolean(newUserIsAdminInput?.checked))) {
+    newUserIsMasterAdminInput.checked = false;
+  }
+
   state.users.forEach((user) => {
 
     const row = document.createElement("div");
@@ -10216,6 +10251,11 @@ function renderUsers() {
 
       badges.appendChild(adminBadge);
 
+      const scopeBadge = document.createElement("span");
+      scopeBadge.className = "tag";
+      scopeBadge.textContent = user.is_master_admin ? "MASTER" : "DEPTO";
+      badges.appendChild(scopeBadge);
+
     }
 
     const statusBadge = document.createElement("span");
@@ -10244,11 +10284,8 @@ function renderUsers() {
 
     meta.className = "user-item-meta";
 
-    meta.textContent = `ID #${user.id} • ${user.is_admin ? "Administrador" : "Usuário"} • ${
-
-      user.is_active ? "Ativo" : "Inativo"
-
-    }`;
+    const roleLabel = user.is_admin ? (user.is_master_admin ? "Admin master" : "Admin depto") : "Usuário";
+    meta.textContent = `ID #${user.id} • ${roleLabel} • ${user.is_active ? "Ativo" : "Inativo"}`;
 
 
 
@@ -10262,21 +10299,30 @@ function renderUsers() {
 
     if (state.user.id !== user.id) {
 
-      const toggleButton = document.createElement("button");
+      if (canManageRoles) {
+        const toggleButton = document.createElement("button");
 
-      toggleButton.textContent = user.is_active ? "Desativar" : "Reativar";
+        toggleButton.textContent = user.is_active ? "Desativar" : "Reativar";
 
-      toggleButton.addEventListener("click", () => toggleUser(user));
+        toggleButton.addEventListener("click", () => toggleUser(user));
 
-      actions.appendChild(toggleButton);
+        actions.appendChild(toggleButton);
 
-      const roleButton = document.createElement("button");
+        const roleButton = document.createElement("button");
 
-      roleButton.textContent = user.is_admin ? "Remover admin" : "Tornar admin";
+        roleButton.textContent = user.is_admin ? "Remover admin" : "Tornar admin";
 
-      roleButton.addEventListener("click", () => toggleAdmin(user));
+        roleButton.addEventListener("click", () => toggleAdmin(user));
 
-      actions.appendChild(roleButton);
+        actions.appendChild(roleButton);
+
+        if (user.is_admin) {
+          const masterButton = document.createElement("button");
+          masterButton.textContent = user.is_master_admin ? "Remover master" : "Tornar master";
+          masterButton.addEventListener("click", () => toggleMasterAdmin(user));
+          actions.appendChild(masterButton);
+        }
+      }
 
     } else {
 
@@ -11285,6 +11331,7 @@ newUserForm.addEventListener("submit", async (event) => {
     password: newUserPasswordInput.value.trim(),
 
     is_admin: newUserIsAdminInput.checked,
+    is_master_admin: Boolean(newUserIsAdminInput.checked && newUserIsMasterAdminInput?.checked),
 
   };
 
@@ -11398,7 +11445,43 @@ async function toggleAdmin(user) {
 
       method: "PATCH",
 
-      body: JSON.stringify({ is_admin: targetState }),
+      body: JSON.stringify({
+        is_admin: targetState,
+        is_master_admin: false,
+      }),
+
+    });
+
+    await loadUsers();
+
+  } catch (error) {
+
+    alert(error.message);
+
+  }
+
+}
+
+
+async function toggleMasterAdmin(user) {
+
+  if (!user?.is_admin) return;
+
+  const targetState = !Boolean(user.is_master_admin);
+
+  const label = targetState ? "Tornar master" : "Remover master";
+
+  const confirmChange = confirm(`${label} para ${user.username}?`);
+
+  if (!confirmChange) return;
+
+  try {
+
+    await fetchJson(`/api/users/${user.id}`, {
+
+      method: "PATCH",
+
+      body: JSON.stringify({ is_master_admin: targetState }),
 
     });
 

@@ -269,6 +269,11 @@ def require_admin(user: User) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requer perfil administrador")
 
 
+def require_master_admin(user: User) -> None:
+    if not user.is_admin or not getattr(user, "is_master_admin", False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requer perfil administrador master")
+
+
 def get_default_owner(session: Session, organization_id: int) -> User:
     owner = session.exec(
         select(User)
@@ -313,10 +318,41 @@ def get_user_in_organization(
     return user
 
 
-def ensure_conversation_access(conversation: Conversation, user: User) -> None:
+def get_department_conversation_owner_ids(session: Session, user: User) -> set[int]:
+    """Owner ids acessíveis para admin restrito por departamento."""
+    if not user.id or not user.organization_id:
+        return set()
+    dept_ids = session.exec(
+        select(DepartmentUserLink.department_id)
+        .where(DepartmentUserLink.user_id == user.id)
+        .where(DepartmentUserLink.department_id == Department.id)
+        .where(Department.organization_id == user.organization_id)
+    ).all()
+    dept_id_set = {int(dept_id) for dept_id in dept_ids if dept_id}
+    if not dept_id_set:
+        return {int(user.id)}
+    user_ids = session.exec(
+        select(DepartmentUserLink.user_id)
+        .where(DepartmentUserLink.department_id.in_(dept_id_set))
+        .where(DepartmentUserLink.department_id == Department.id)
+        .where(Department.organization_id == user.organization_id)
+    ).all()
+    allowed = {int(uid) for uid in user_ids if uid}
+    allowed.add(int(user.id))
+    return allowed
+
+
+def ensure_conversation_access(session: Session, conversation: Conversation, user: User) -> None:
     if conversation.organization_id != user.organization_id:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    if conversation.owner_user_id not in (user.id, None) and not user.is_admin:
+    if conversation.owner_user_id in (user.id, None):
+        return
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Conversa nao pertence ao usuario")
+    if getattr(user, "is_master_admin", False):
+        return
+    allowed_owner_ids = get_department_conversation_owner_ids(session, user)
+    if conversation.owner_user_id not in allowed_owner_ids:
         raise HTTPException(status_code=403, detail="Conversa nao pertence ao usuario")
 
 
@@ -362,6 +398,7 @@ def ensure_default_user(session: Session, organization: Organization) -> User:
         if user.organization_id != organization.id:
             user.organization_id = organization.id
             user.is_admin = True
+            user.is_master_admin = True
             session.add(user)
             session.commit()
             session.refresh(user)
@@ -372,6 +409,7 @@ def ensure_default_user(session: Session, organization: Organization) -> User:
         password_hash=get_password_hash(DEFAULT_ADMIN_PASSWORD),
         organization_id=organization.id,
         is_admin=True,
+        is_master_admin=True,
     )
     session.add(user)
     session.commit()
@@ -391,6 +429,9 @@ def ensure_default_collaborator(session: Session) -> User:
         if not user.is_admin:
             user.is_admin = True
             updated = True
+        if not getattr(user, "is_master_admin", False):
+            user.is_master_admin = True
+            updated = True
         if not verify_password(COLLAB_PASSWORD, user.password_hash):
             user.password_hash = get_password_hash(COLLAB_PASSWORD)
             updated = True
@@ -408,6 +449,7 @@ def ensure_default_collaborator(session: Session) -> User:
         password_hash=get_password_hash(COLLAB_PASSWORD),
         organization_id=None,
         is_admin=True,
+        is_master_admin=True,
     )
     session.add(user)
     session.commit()
@@ -1920,6 +1962,9 @@ def list_conversations(
     )
     if not current_user.is_admin or scope != "all":
         base_query = base_query.where(Conversation.owner_user_id == current_user.id)
+    elif not getattr(current_user, "is_master_admin", False):
+        allowed_owner_ids = get_department_conversation_owner_ids(session, current_user)
+        base_query = base_query.where(Conversation.owner_user_id.in_(allowed_owner_ids))
 
     pinned_ids: set[int] = set()
     pinned_at_map: dict[int, datetime] = {}
@@ -2129,7 +2174,7 @@ def get_conversation(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     conversation_read = ConversationRead.model_validate(conversation)
     conversation_read.tags = visible_tags_for_user(conversation.tags, current_user)
     avatar_entry = session.get(ConversationAvatar, conversation_id)
@@ -2152,7 +2197,7 @@ def update_conversation(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     update_data = payload.model_dump(exclude_unset=True)
     if "debtor_name" in update_data:
         new_name = (update_data["debtor_name"] or "").strip()
@@ -2175,7 +2220,7 @@ def pin_conversation(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
 
     existing = session.get(ConversationPin, (conversation_id, current_user.id))
     if existing:
@@ -2195,7 +2240,7 @@ def unpin_conversation(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
 
     existing = session.get(ConversationPin, (conversation_id, current_user.id))
     if not existing:
@@ -2214,7 +2259,7 @@ def mark_conversation_unread(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
 
     latest_debtor_message = session.exec(
         select(Message)
@@ -2244,7 +2289,7 @@ def list_messages(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     query = select(Message).where(Message.conversation_id == conversation_id)
     if before_id:
         query = query.where(Message.id < before_id)
@@ -2322,7 +2367,7 @@ def delete_message_for_all(
     conversation = session.get(Conversation, message.conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
 
     if message.direction != MessageDirection.agent:
         raise HTTPException(status_code=400, detail="Só é possível apagar mensagens enviadas por você.")
@@ -2377,7 +2422,7 @@ def edit_message(
     conversation = session.get(Conversation, message.conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
 
     if message.direction != MessageDirection.agent:
         raise HTTPException(status_code=400, detail="Só é possível editar mensagens enviadas por você.")
@@ -2460,7 +2505,7 @@ def react_to_message(
     conversation = session.get(Conversation, message.conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
 
     if not message.integration_message_id:
         raise HTTPException(
@@ -2536,7 +2581,7 @@ def list_conversation_notes(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     notes = session.exec(
         select(ConversationNote)
         .where(ConversationNote.conversation_id == conversation_id)
@@ -2570,7 +2615,7 @@ def create_conversation_note(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -2606,7 +2651,7 @@ def get_conversation_avatar(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     avatar_entry = session.get(ConversationAvatar, conversation_id)
     now = datetime.utcnow()
     if avatar_entry and avatar_entry.media_path and avatar_entry.updated_at:
@@ -2642,7 +2687,7 @@ def send_message(
     conversation = session.get(Conversation, payload.conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa invalida")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
 
     quoted_message = ensure_reply_target(session, conversation.id, payload.reply_to_message_id)
     integration_session = ensure_session_exists(
@@ -2732,7 +2777,7 @@ async def send_audio_message(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa invalida")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     integration_session = ensure_session_exists(
         session, current_user.organization_id, current_user.id
     )
@@ -2872,7 +2917,7 @@ async def send_media_file(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa invalida")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     integration_session = ensure_session_exists(
         session, current_user.organization_id, current_user.id
     )
@@ -2992,7 +3037,7 @@ def start_voice_call(
     conversation = session.get(Conversation, payload.conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     phone_number = payload.phone_number or conversation.debtor_phone
     if not phone_number:
         raise HTTPException(status_code=400, detail="Nao ha telefone associado a esta conversa.")
@@ -3058,7 +3103,7 @@ def reject_voice_call(
         conversation = session.get(Conversation, payload.conversation_id)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-        ensure_conversation_access(conversation, current_user)
+        ensure_conversation_access(session, conversation, current_user)
         phone_number = phone_number or conversation.debtor_phone
     if not phone_number and not payload.call_id:
         raise HTTPException(
@@ -4224,6 +4269,8 @@ def create_user(
     current_user: User = Depends(get_current_user),
 ) -> UserRead:
     require_admin(current_user)
+    if payload.is_admin or payload.is_master_admin:
+        require_master_admin(current_user)
     username = normalize_username(payload.username)
     existing = session.exec(select(User).where(User.username == username)).first()
     if existing:
@@ -4234,6 +4281,7 @@ def create_user(
         password_hash=get_password_hash(payload.password),
         organization_id=current_user.organization_id,
         is_admin=payload.is_admin,
+        is_master_admin=bool(payload.is_admin and payload.is_master_admin),
     )
     session.add(user)
     session.commit()
@@ -4336,6 +4384,7 @@ def create_admin_organization(
             password_hash=get_password_hash(payload.admin_password),
             organization_id=organization.id,
             is_admin=True,
+            is_master_admin=True,
         )
         session.add(user)
         session.commit()
@@ -4496,7 +4545,7 @@ def attach_tag(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     tag = session.get(Tag, tag_id)
     if (
         not tag
@@ -4527,7 +4576,7 @@ def detach_tag(
     conversation = session.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
-    ensure_conversation_access(conversation, current_user)
+    ensure_conversation_access(session, conversation, current_user)
     tag = session.get(Tag, tag_id)
     if (
         not tag
@@ -4716,7 +4765,7 @@ def list_reminders(
         conversation = session.get(Conversation, conversation_id)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-        ensure_conversation_access(conversation, current_user)
+        ensure_conversation_access(session, conversation, current_user)
         query = query.where(Reminder.conversation_id == conversation_id)
     query = query.where(Reminder.owner_user_id == current_user.id)
     if status == "pending":
@@ -4740,7 +4789,7 @@ def create_reminder(
         conversation = session.get(Conversation, conversation_id)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversa nao encontrada")
-        ensure_conversation_access(conversation, current_user)
+        ensure_conversation_access(session, conversation, current_user)
     owner_user_id = payload.owner_user_id or current_user.id
     if owner_user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(
@@ -4825,16 +4874,26 @@ def update_user(
     if "full_name" in update_data:
         user.full_name = update_data["full_name"]
     if "is_active" in update_data and user.id != current_user.id:
+        require_master_admin(current_user)
         user.is_active = update_data["is_active"]
     if "password" in update_data and update_data["password"]:
         user.password_hash = get_password_hash(update_data["password"])
     if "is_admin" in update_data:
+        require_master_admin(current_user)
         new_is_admin = update_data["is_admin"]
         if user.id == current_user.id and not new_is_admin:
             raise HTTPException(status_code=400, detail="Nao eh permitido remover seu proprio perfil administrador")
         if not new_is_admin and not has_other_admin(session, user.organization_id, exclude_user_id=user.id):
             raise HTTPException(status_code=400, detail="Organizacao precisa de pelo menos um administrador")
         user.is_admin = new_is_admin
+        if not new_is_admin:
+            user.is_master_admin = False
+    if "is_master_admin" in update_data:
+        require_master_admin(current_user)
+        requested_master = bool(update_data["is_master_admin"])
+        if requested_master and not user.is_admin:
+            raise HTTPException(status_code=400, detail="Somente administradores podem ser admin master")
+        user.is_master_admin = requested_master if user.is_admin else False
     session.add(user)
     session.commit()
     session.refresh(user)

@@ -366,6 +366,7 @@ class User(SQLModel, table=True):
     full_name: Optional[str] = None
     is_active: bool = Field(default=True)
     is_admin: bool = Field(default=False)
+    is_master_admin: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     organization: Optional[Organization] = Relationship(back_populates="users")
@@ -414,6 +415,7 @@ class UserRead(SQLModel):
     full_name: Optional[str]
     is_active: bool
     is_admin: bool
+    is_master_admin: bool = False
     created_at: datetime
     departments: List[str] = []
 
@@ -423,6 +425,7 @@ class UserCreate(SQLModel):
     password: str
     full_name: Optional[str] = None
     is_admin: bool = False
+    is_master_admin: bool = False
 
 
 class UserUpdate(SQLModel):
@@ -430,6 +433,7 @@ class UserUpdate(SQLModel):
     is_active: Optional[bool] = None
     password: Optional[str] = None
     is_admin: Optional[bool] = None
+    is_master_admin: Optional[bool] = None
 
 
 class AuthLogin(SQLModel):
