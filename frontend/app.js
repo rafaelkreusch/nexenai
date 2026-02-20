@@ -458,6 +458,9 @@ const mediaUploadLabel = document.getElementById("mediaUploadLabel");
 const emojiToggleButton = document.getElementById("emojiToggleButton");
 const emojiPickerPanel = document.getElementById("emojiPickerPanel");
 const emojiPickerElement = emojiPickerPanel?.querySelector("emoji-picker");
+const aiRewriteButton = document.getElementById("aiRewriteButton");
+const aiRewritePanel = document.getElementById("aiRewritePanel");
+const aiRewriteToneButtons = aiRewritePanel?.querySelectorAll("button.ai-tone") || [];
 const imagePreviewModal = document.getElementById("imagePreviewModal");
 const imagePreviewImage = document.getElementById("imagePreviewImage");
 const imagePreviewCaption = document.getElementById("imagePreviewCaption");
@@ -609,6 +612,8 @@ const state = {
   messageLoadAbortController: null,
   replyContext: null,
   emojiPickerOpen: false,
+  aiRewriteOpen: false,
+  aiRewriteRunning: false,
   quickReplyOpen: false,
   quickReplyIndex: 0,
   quickReplyMatches: [],
@@ -955,6 +960,7 @@ function restoreDraftForConversation(conversationId) {
   const draft = loadConversationDraft(conversationId);
   messageInput.value = draft || "";
   scheduleMessageInputResize();
+  updateAiRewriteButtonState();
 }
 
 function loadSignMessagesPreference() {
@@ -1759,6 +1765,7 @@ function applyQuickReplyAtCursor(index) {
   messageInput.focus();
   closeQuickReplyPanel();
   scheduleMessageInputResize();
+  updateAiRewriteButtonState();
 }
 
 
@@ -2201,6 +2208,71 @@ function toggleEmojiPicker() {
   }
 }
 
+function openAiRewritePanel() {
+  if (!aiRewritePanel || !aiRewriteButton || aiRewriteButton.disabled) return;
+  closeEmojiPicker();
+  aiRewritePanel.classList.remove("hidden");
+  state.aiRewriteOpen = true;
+}
+
+function closeAiRewritePanel() {
+  if (!aiRewritePanel) return;
+  aiRewritePanel.classList.add("hidden");
+  state.aiRewriteOpen = false;
+}
+
+function toggleAiRewritePanel() {
+  if (state.aiRewriteOpen) {
+    closeAiRewritePanel();
+  } else {
+    openAiRewritePanel();
+  }
+}
+
+function updateAiRewriteButtonState() {
+  if (!aiRewriteButton) return;
+  const enabled = !messageInput?.disabled && String(messageInput?.value || "").trim().length > 0;
+  aiRewriteButton.disabled = !enabled || Boolean(state.aiRewriteRunning);
+}
+
+async function performAiRewrite(tone) {
+  if (!messageInput || messageInput.disabled) return;
+  const raw = String(messageInput.value || "").trim();
+  if (!raw) return;
+
+  if (!state.token) {
+    alert("Você precisa estar logado para usar a IA.");
+    return;
+  }
+
+  state.aiRewriteRunning = true;
+  updateAiRewriteButtonState();
+  aiRewriteButton?.classList.add("loading");
+  aiRewriteToneButtons?.forEach((btn) => (btn.disabled = true));
+
+  try {
+    const result = await fetchJson("/api/ai/rewrite", {
+      method: "POST",
+      body: JSON.stringify({ text: raw, tone: String(tone || "friendly") }),
+    });
+    const rewritten = String(result?.text || "").trim();
+    if (!rewritten) {
+      throw new Error("Resposta vazia da IA.");
+    }
+    messageInput.value = rewritten;
+    scheduleMessageInputResize();
+    messageInput.focus();
+    closeAiRewritePanel();
+  } catch (error) {
+    alert(error?.message || "Falha ao ajustar o texto.");
+  } finally {
+    state.aiRewriteRunning = false;
+    aiRewriteButton?.classList.remove("loading");
+    aiRewriteToneButtons?.forEach((btn) => (btn.disabled = false));
+    updateAiRewriteButtonState();
+  }
+}
+
 function insertEmojiAtCursor(emoji) {
   if (!messageInput || messageInput.disabled) return;
   const start = messageInput.selectionStart ?? messageInput.value.length;
@@ -2212,6 +2284,7 @@ function insertEmojiAtCursor(emoji) {
   messageInput.selectionStart = messageInput.selectionEnd = caret;
   messageInput.focus();
   scheduleMessageInputResize();
+  updateAiRewriteButtonState();
 }
 
 function openNoteModal() {
@@ -2285,8 +2358,15 @@ function setMessageFormAvailability(enabled) {
   if (emojiToggleButton) {
     emojiToggleButton.disabled = !enabled;
   }
+  if (aiRewriteButton) {
+    aiRewriteButton.disabled = !enabled;
+  }
   if (!enabled) {
     closeEmojiPicker();
+    closeAiRewritePanel();
+  }
+  if (enabled) {
+    updateAiRewriteButtonState();
   }
   scheduleMessageInputResize();
 }
@@ -6347,6 +6427,7 @@ if (messageForm) {
   state.sendingMessage = true;
   messageInput.value = "";
   scheduleMessageInputResize();
+  updateAiRewriteButtonState();
   closeQuickReplyPanel();
 
   try {
@@ -6406,10 +6487,12 @@ if (messageInput && messageForm) {
     scheduleMessageInputResize();
     updateQuickReplyPanel();
     scheduleDraftSave();
+    updateAiRewriteButtonState();
   });
 
   // Set the initial height once styles are applied.
   scheduleMessageInputResize();
+  updateAiRewriteButtonState();
 
   messageInput.addEventListener("keydown", (event) => {
 
@@ -6954,6 +7037,15 @@ document.addEventListener("click", (event) => {
   }
 
   if (
+    state.aiRewriteOpen &&
+    aiRewritePanel &&
+    !aiRewritePanel.contains(event.target) &&
+    !aiRewriteButton?.contains(event.target)
+  ) {
+    closeAiRewritePanel();
+  }
+
+  if (
     userMenuPanel &&
     !userMenuPanel.classList.contains("hidden") &&
     !userMenuPanel.contains(event.target) &&
@@ -6982,6 +7074,9 @@ document.addEventListener("keydown", (event) => {
     }
     if (state.emojiPickerOpen) {
       closeEmojiPicker();
+    }
+    if (state.aiRewriteOpen) {
+      closeAiRewritePanel();
     }
     if (state.imagePreviewOpen) {
       closeImagePreview();
@@ -7928,6 +8023,16 @@ if (emojiPickerElement) {
       insertEmojiAtCursor(emoji);
     }
     closeEmojiPicker();
+  });
+}
+
+aiRewriteButton?.addEventListener("click", () => {
+  updateAiRewriteButtonState();
+  toggleAiRewritePanel();
+});
+if (aiRewriteToneButtons?.length) {
+  aiRewriteToneButtons.forEach((button) => {
+    button.addEventListener("click", () => performAiRewrite(button.dataset.tone));
   });
 }
 

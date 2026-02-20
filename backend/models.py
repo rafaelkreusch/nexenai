@@ -91,6 +91,17 @@ class OrganizationUpdate(SQLModel):
     webhook_url: Optional[str] = None
 
 
+class AiRewriteRequest(SQLModel):
+    text: str
+    tone: str = "friendly"
+
+
+class AiRewriteResponse(SQLModel):
+    text: str
+    tone: str
+    model: Optional[str] = None
+
+
 class ConversationBase(SQLModel):
     debtor_name: str = Field(index=True)
     debtor_phone: str = Field(index=True)

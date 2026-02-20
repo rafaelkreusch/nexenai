@@ -6449,6 +6449,71 @@ button.reminder-trigger {
   height: 360px;
 }
 
+.ai-rewrite-panel {
+  position: absolute;
+  right: 0.5rem;
+  bottom: calc(100% + 0.5rem);
+  background: #202326;
+  border-radius: 18px;
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  z-index: 46;
+  padding: 0.75rem;
+  width: 260px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.ai-rewrite-panel.hidden {
+  display: none;
+}
+
+.ai-rewrite-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.65rem;
+}
+
+.ai-rewrite-header strong {
+  font-size: 0.95rem;
+}
+
+.ai-rewrite-header .muted {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.ai-rewrite-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.45rem;
+}
+
+.ai-rewrite-actions .ai-tone {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  padding: 0.55rem 0.5rem;
+  font-weight: 700;
+  font-size: 0.83rem;
+}
+
+.ai-rewrite-actions .ai-tone:hover,
+.ai-rewrite-actions .ai-tone:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+}
+
+.ai-rewrite-actions .ai-tone:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.message-composer #aiRewriteButton.loading .toolbar-icon,
+.message-composer #aiRewriteButton.loading svg {
+  animation: audioSpin 1s linear infinite;
+}
+
 .quick-reply-panel {
   position: absolute;
   left: 0.5rem;

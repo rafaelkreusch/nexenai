@@ -108,6 +108,8 @@ from models import (
     CollaboratorOrganizationCreate,
     CollaboratorOrganizationRead,
     OrganizationUpdate,
+    AiRewriteRequest,
+    AiRewriteResponse,
 )
 
 USERNAME_PATTERN = re.compile(r"^[a-z0-9._]+$")  # validated no spaces
@@ -1463,6 +1465,99 @@ def transcribe_audio_via_openai(
     return {"text": payload.get("text") or "", "model": model, "raw": payload}
 
 
+def rewrite_text_via_openai(*, text: str, tone: str) -> Dict[str, Any]:
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=501,
+            detail="Reescrita indisponível (OPENAI_API_KEY não configurada).",
+        )
+
+    allowed_tones = {
+        "friendly": "Amigável",
+        "formal": "Formal",
+        "direct": "Direto",
+    }
+    tone_key = (tone or "").strip().lower()
+    if tone_key not in allowed_tones:
+        raise HTTPException(status_code=422, detail="Tom inválido para reescrita.")
+
+    model = (os.getenv("OPENAI_REWRITE_MODEL") or "gpt-4o-mini").strip()
+    max_chars = int(os.getenv("OPENAI_REWRITE_MAX_CHARS", "4000"))
+    clean_text = (text or "").strip()
+    if not clean_text:
+        raise HTTPException(status_code=422, detail="Informe um texto para reescrever.")
+    if len(clean_text) > max_chars:
+        raise HTTPException(status_code=413, detail="Texto grande demais para reescrita.")
+
+    tone_label = allowed_tones[tone_key]
+    instructions = (
+        "Você é um reescritor de mensagens para atendimento ao cliente.\n"
+        "Regras obrigatórias:\n"
+        "- Reescreva mantendo exatamente o mesmo sentido e intenções.\n"
+        "- Não invente, não adicione fatos, não inclua suposições.\n"
+        "- Preserve nomes próprios, números, valores, datas, telefones, links e IDs.\n"
+        "- Não crie informações novas nem mude promessas/condições.\n"
+        "- Mantenha o idioma original do texto.\n"
+        "- Retorne SOMENTE o texto reescrito, sem aspas, sem explicações.\n"
+        f"Tom desejado: {tone_label}.\n"
+    )
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "developer", "content": instructions},
+            {"role": "user", "content": clean_text},
+        ],
+    }
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        logger.warning("Falha ao chamar OpenAI para reescrita: %s", exc)
+        raise HTTPException(status_code=502, detail="Falha ao reescrever texto.")
+
+    if response.status_code >= 400:
+        try:
+            error_payload = response.json()
+        except Exception:
+            error_payload = {"error": {"message": response.text[:400]}}
+        message = (
+            error_payload.get("error", {}).get("message")
+            if isinstance(error_payload, dict)
+            else None
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha ao reescrever texto: {message or 'erro do provedor'}",
+        )
+    try:
+        data = response.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Resposta inválida da reescrita.")
+
+    content = ""
+    try:
+        choices = data.get("choices") or []
+        if choices:
+            content = (choices[0].get("message") or {}).get("content") or ""
+    except Exception:
+        content = ""
+
+    rewritten = str(content or "").strip()
+    if not rewritten:
+        raise HTTPException(status_code=502, detail="Reescrita vazia.")
+    return {"text": rewritten, "model": model, "tone": tone_key}
+
+
 def _download_uazapi_message_media(
     message_id: str,
     integration_session: DeviceSession,
@@ -2803,6 +2898,20 @@ def transcribe_message_audio(
         deletion,
         my_reaction=my_reaction,
         reaction_counts=counts,
+    )
+
+
+@app.post("/api/ai/rewrite", response_model=AiRewriteResponse)
+def ai_rewrite_text(
+    payload: AiRewriteRequest,
+    current_user: User = Depends(get_current_user),
+) -> AiRewriteResponse:
+    _ = current_user  # just ensure authenticated
+    result = rewrite_text_via_openai(text=payload.text, tone=payload.tone)
+    return AiRewriteResponse(
+        text=result["text"],
+        tone=result.get("tone") or (payload.tone or "friendly"),
+        model=result.get("model"),
     )
 
 
