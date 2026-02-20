@@ -841,6 +841,8 @@ input::placeholder {
 
   overflow-y: auto;
 
+  padding-right: 0.25rem;
+
 }
 
 
@@ -1031,25 +1033,30 @@ input::placeholder {
 
 
 
-  .tag-menu {
+  .chat-toolbar .tag-menu {
   position: absolute;
   top: calc(100% + 8px);
-  left: 0;
-  width: 260px;
-  background: var(--shell-surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 0.8rem;
-  color: #ffffff;
+  right: 0;
+  left: auto;
+  width: 280px;
+  max-width: min(320px, calc(100vw - 18px));
+  background: #202326;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 0.85rem;
+  color: rgba(255, 255, 255, 0.92);
   box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65);
-
-  z-index: 20;
-
+  z-index: 220;
+  max-height: min(72vh, 520px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 
 
-.tag-menu .tag-menu-list {
+.chat-toolbar .tag-menu .tag-menu-list {
 
   display: flex;
 
@@ -1057,7 +1064,7 @@ input::placeholder {
 
   gap: 0.4rem;
 
-  max-height: 220px;
+  max-height: min(36vh, 260px);
 
   overflow-y: auto;
 
@@ -1065,15 +1072,15 @@ input::placeholder {
 
 
 
-.tag-menu-list button {
+.chat-toolbar .tag-menu-list button {
 
   background: transparent;
 
   border: none;
 
-  color: #151624;
+  color: rgba(255, 255, 255, 0.88);
 
-  padding: 0.3rem 0.2rem;
+  padding: 0.45rem 0.45rem;
 
   text-align: left;
 
@@ -1087,11 +1094,21 @@ input::placeholder {
 
   gap: 0.5rem;
 
+  border-radius: 12px;
+
+}
+
+.chat-toolbar .tag-menu-list button:hover {
+
+  background: rgba(255, 255, 255, 0.06);
+
+  color: #ffffff;
+
 }
 
 
 
-.tag-menu-list button.active {
+.chat-toolbar .tag-menu-list button.active {
 
   color: var(--primary);
 
@@ -1099,7 +1116,7 @@ input::placeholder {
 
 
 
-.tag-menu .tag-menu-item {
+.chat-toolbar .tag-menu .tag-menu-item {
 
   display: flex;
 
@@ -1113,13 +1130,13 @@ input::placeholder {
 
   padding: 0.3rem 0.1rem;
 
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 
 }
 
 
 
-.tag-menu .tag-menu-item:last-child {
+.chat-toolbar .tag-menu .tag-menu-item:last-child {
 
   border-bottom: none;
 
@@ -1127,13 +1144,13 @@ input::placeholder {
 
 
 
-.tag-menu .empty {
+.chat-toolbar .tag-menu .empty {
 
   text-align: center;
 
   font-size: 0.8rem;
 
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.65);
 
 }
 
@@ -1157,7 +1174,7 @@ input::placeholder {
 
 
 
-.tag-menu label {
+.chat-toolbar .tag-menu label {
 
   display: flex;
 
@@ -1175,7 +1192,7 @@ input::placeholder {
 
 
 
-.tag-menu input[type="checkbox"] {
+.chat-toolbar .tag-menu input[type="checkbox"] {
 
   accent-color: var(--primary);
 
@@ -1183,9 +1200,9 @@ input::placeholder {
 
 
 
-.tag-form {
+.chat-toolbar .tag-form {
 
-  border-top: 1px solid #1f2c34;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
 
   margin-top: 0.8rem;
 
@@ -1201,23 +1218,39 @@ input::placeholder {
 
 
 
-.tag-form input[type="text"] {
+.chat-toolbar .tag-form input[type="text"] {
 
-  border-radius: 8px;
+  border-radius: 12px;
 
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 
-  padding: 0.5rem 0.7rem;
+  padding: 0.55rem 0.75rem;
 
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
 
-  color: #151624;
+  color: rgba(255, 255, 255, 0.92);
+
+}
+
+.chat-toolbar .tag-form input[type="text"]::placeholder {
+
+  color: rgba(255, 255, 255, 0.55);
+
+}
+
+.chat-toolbar .tag-form input[type="text"]:focus {
+
+  outline: none;
+
+  border-color: rgba(205, 92, 221, 0.55);
+
+  box-shadow: 0 0 0 3px rgba(205, 92, 221, 0.16);
 
 }
 
 
 
-.tag-form input[type="color"] {
+.chat-toolbar .tag-form input[type="color"] {
 
   width: 100%;
 
@@ -1225,9 +1258,11 @@ input::placeholder {
 
   height: 36px;
 
-  border-radius: 8px;
+  border-radius: 12px;
 
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+
+  padding: 0;
 
 }
 
@@ -8983,6 +9018,8 @@ body.image-preview-open {
   background: #141619;
   flex: 1;
   overflow-y: auto;
+
+  padding-right: 0.25rem;
   min-height: 0;
   scrollbar-width: thin;
   scrollbar-color: rgba(205, 92, 221, 0.35) rgba(255, 255, 255, 0.06);
