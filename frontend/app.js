@@ -3855,6 +3855,27 @@ function clearConversationAdminFilters(options = {}) {
   }
 }
 
+function patchMessageInState(messageId, patch) {
+  if (!messageId || !patch) return;
+
+  const applyToArray = (arr) => {
+    if (!Array.isArray(arr)) return;
+    const idx = arr.findIndex((m) => m && m.id === messageId);
+    if (idx >= 0) {
+      arr[idx] = { ...arr[idx], ...patch };
+    }
+  };
+
+  applyToArray(state.latestMessages);
+  applyToArray(state.fullMessages);
+
+  const byConversation = state.messagesByConversation || {};
+  Object.keys(byConversation).forEach((key) => {
+    const list = byConversation[key];
+    applyToArray(list);
+  });
+}
+
 function updateConversationAdminFiltersVisibility() {
   if (!conversationAdminFilters) return;
 
@@ -5041,6 +5062,9 @@ function renderMessages(messages, options = {}) {
     }
 
     if (!state.messageSelectionMode) {
+      const inlineActions = document.createElement("div");
+      inlineActions.className = "message-inline-actions";
+
       const reactionToggle = document.createElement("button");
       reactionToggle.type = "button";
       reactionToggle.className = "message-reaction-toggle";
@@ -5062,10 +5086,82 @@ function renderMessages(messages, options = {}) {
             x: rect.left,
             y: rect.bottom + 8,
             message,
-          });
-        }
-      });
-      bubble.appendChild(reactionToggle);
+           });
+         }
+       });
+      inlineActions.appendChild(reactionToggle);
+
+      if (message.message_type === "audio" && message.media_url) {
+        const WAND_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>`;
+        const transcribeToggle = document.createElement("button");
+        transcribeToggle.type = "button";
+        transcribeToggle.className = "message-transcribe-toggle";
+        transcribeToggle.title = "Transcrever áudio";
+        transcribeToggle.setAttribute("aria-label", "Transcrever áudio");
+        transcribeToggle.innerHTML = WAND_ICON;
+
+        const findTranscriptBox = () =>
+          bubble.querySelector(`.audio-transcript[data-message-id="${message.id}"]`);
+
+        transcribeToggle.addEventListener("click", async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (message.is_deleted_for_all) return;
+          if (transcribeToggle.disabled) return;
+
+          const transcriptBox = findTranscriptBox();
+          const currentTranscript = String(message.audio_transcript || "").trim();
+          if (currentTranscript && transcriptBox) {
+            transcriptBox.classList.toggle("hidden");
+            return;
+          }
+
+          if (!transcriptBox) {
+            alert("Transcrição indisponível para este áudio.");
+            return;
+          }
+
+          transcribeToggle.disabled = true;
+          transcribeToggle.classList.add("loading");
+          transcriptBox.textContent = "Transcrevendo...";
+          transcriptBox.classList.remove("hidden");
+
+          try {
+            const updated = await fetchJson(`/api/messages/${message.id}/transcribe`, {
+              method: "POST",
+            });
+            if (updated) {
+              patchMessageInState(message.id, updated);
+              Object.assign(message, updated);
+            }
+
+            const text = String(updated?.audio_transcript || message.audio_transcript || "").trim();
+            const status = String(updated?.audio_transcript_status || message.audio_transcript_status || "").trim();
+            const errorText = String(updated?.audio_transcript_error || message.audio_transcript_error || "").trim();
+
+            if (text) {
+              transcriptBox.textContent = text;
+              transcribeToggle.title = "Ver/ocultar transcrição";
+              transcribeToggle.setAttribute("aria-label", "Ver/ocultar transcrição");
+            } else if (status === "empty") {
+              transcriptBox.textContent = "Sem transcrição.";
+            } else if (status === "error" && errorText) {
+              transcriptBox.textContent = errorText;
+            } else {
+              transcriptBox.textContent = "Não foi possível transcrever este áudio.";
+            }
+          } catch (error) {
+            transcriptBox.textContent = error?.message || "Falha ao transcrever este áudio.";
+          } finally {
+            transcribeToggle.disabled = false;
+            transcribeToggle.classList.remove("loading");
+          }
+        });
+
+        inlineActions.appendChild(transcribeToggle);
+      }
+
+      bubble.appendChild(inlineActions);
 
       const toggle = document.createElement("button");
       toggle.type = "button";
@@ -5365,8 +5461,27 @@ function appendAudioMessage(container, message) {
   audioEl.src = message.media_url;
   audioEl.dataset.messageId = String(message.id || "");
 
+  const transcriptBox = document.createElement("div");
+  transcriptBox.className = "audio-transcript hidden";
+  transcriptBox.dataset.messageId = String(message.id || "");
+
+  const existingTranscript = String(message.audio_transcript || "").trim();
+  const existingStatus = String(message.audio_transcript_status || "").trim();
+  const existingError = String(message.audio_transcript_error || "").trim();
+  if (existingTranscript) {
+    transcriptBox.textContent = existingTranscript;
+    transcriptBox.classList.remove("hidden");
+  } else if (existingStatus === "processing") {
+    transcriptBox.textContent = "Transcrevendo...";
+    transcriptBox.classList.remove("hidden");
+  } else if (existingStatus === "error" && existingError) {
+    transcriptBox.textContent = existingError;
+    transcriptBox.classList.remove("hidden");
+  }
+
   player.append(playButton, track, audioEl);
   wrapper.appendChild(player);
+  wrapper.appendChild(transcriptBox);
   container.appendChild(wrapper);
 
   const stopOtherAudios = () => {

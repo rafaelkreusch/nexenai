@@ -230,6 +230,12 @@ class Message(MessageBase, table=True):
     edited_at: Optional[datetime] = None
     edited_by_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
+    audio_transcript: Optional[str] = None
+    audio_transcript_status: Optional[str] = None
+    audio_transcript_error: Optional[str] = None
+    audio_transcript_model: Optional[str] = None
+    audio_transcribed_at: Optional[datetime] = None
+
     conversation: Optional[Conversation] = Relationship(back_populates="messages")
     session: Optional["DeviceSession"] = Relationship(back_populates="messages")
 
@@ -250,6 +256,11 @@ class MessageRead(MessageBase):
     edited_by_user_id: Optional[int] = None
     my_reaction: Optional[str] = None
     reaction_counts: Dict[str, int] = Field(default_factory=dict)
+    audio_transcript: Optional[str] = None
+    audio_transcript_status: Optional[str] = None
+    audio_transcript_error: Optional[str] = None
+    audio_transcript_model: Optional[str] = None
+    audio_transcribed_at: Optional[datetime] = None
 
 
 class MessageEditRequest(SQLModel):

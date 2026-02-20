@@ -1354,6 +1354,115 @@ def _should_discard_download(
     return False
 
 
+def _safe_join_media_path(base: Path, key: str) -> Path:
+    clean = (key or "").lstrip("/").replace("\\", "/")
+    if not clean or ".." in clean.split("/"):
+        raise HTTPException(status_code=400, detail="Caminho de mídia inválido.")
+    target = (base / clean).resolve()
+    base_resolved = base.resolve()
+    if base_resolved not in target.parents and target != base_resolved:
+        raise HTTPException(status_code=400, detail="Caminho de mídia inválido.")
+    return target
+
+
+def load_media_bytes_from_storage(key: str) -> Tuple[bytes, Optional[str], Optional[str]]:
+    if not key:
+        raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+
+    if media_storage.is_local() and media_storage.local_base_path:
+        path = _safe_join_media_path(media_storage.local_base_path, key)
+        if not path.exists() or not path.is_file():
+            raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+        try:
+            data = path.read_bytes()
+        except Exception:
+            raise HTTPException(status_code=500, detail="Falha ao ler mídia.")
+        return data, None, path.name
+
+    resolved = media_storage.build_url(key)
+    try:
+        response = requests.get(resolved, timeout=60)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        logger.warning("Falha ao baixar mídia do storage (%s): %s", resolved, exc)
+        raise HTTPException(status_code=502, detail="Falha ao baixar mídia.")
+    content_type = response.headers.get("Content-Type")
+    filename: Optional[str] = None
+    try:
+        parsed = urlparse(resolved)
+        filename = Path(parsed.path or "").name or None
+    except Exception:
+        filename = None
+    return response.content, content_type, filename
+
+
+def transcribe_audio_via_openai(
+    *,
+    audio_bytes: bytes,
+    filename: str,
+    content_type: Optional[str],
+) -> Dict[str, Any]:
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=501,
+            detail="Transcrição indisponível (OPENAI_API_KEY não configurada).",
+        )
+
+    max_bytes = int(os.getenv("OPENAI_TRANSCRIBE_MAX_BYTES", str(25 * 1024 * 1024)))
+    if len(audio_bytes) > max_bytes:
+        raise HTTPException(status_code=413, detail="Áudio grande demais para transcrição.")
+
+    model = (os.getenv("OPENAI_TRANSCRIBE_MODEL") or "gpt-4o-mini-transcribe").strip()
+    language = (os.getenv("OPENAI_TRANSCRIBE_LANGUAGE") or "").strip() or None
+
+    data: Dict[str, Any] = {"model": model}
+    if language:
+        data["language"] = language
+
+    headers = {"Authorization": f"Bearer {api_key}"}
+    files = {
+        "file": (
+            filename or "audio",
+            audio_bytes,
+            (content_type or "application/octet-stream").split(";", 1)[0].strip(),
+        )
+    }
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/audio/transcriptions",
+            headers=headers,
+            data=data,
+            files=files,
+            timeout=120,
+        )
+    except requests.RequestException as exc:
+        logger.warning("Falha ao chamar OpenAI para transcrição: %s", exc)
+        raise HTTPException(status_code=502, detail="Falha ao transcrever áudio.")
+
+    if response.status_code >= 400:
+        try:
+            payload = response.json()
+        except Exception:
+            payload = {"error": {"message": response.text[:400]}}
+        message = (
+            payload.get("error", {}).get("message")
+            if isinstance(payload, dict)
+            else None
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha ao transcrever áudio: {message or 'erro do provedor'}",
+        )
+    try:
+        payload = response.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Resposta inválida da transcrição.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=502, detail="Resposta inválida da transcrição.")
+    return {"text": payload.get("text") or "", "model": model, "raw": payload}
+
+
 def _download_uazapi_message_media(
     message_id: str,
     integration_session: DeviceSession,
@@ -2566,6 +2675,115 @@ def react_to_message(
         existing.reacted_at = datetime.utcnow()
         session.add(existing)
         session.commit()
+
+    deletion = session.get(MessageDeletion, message_id)
+    reactions = session.exec(
+        select(MessageReaction).where(MessageReaction.message_id == message_id)
+    ).all()
+    counts: Dict[str, int] = {}
+    my_reaction: Optional[str] = None
+    for reaction in reactions:
+        em = (reaction.emoji or "").strip()
+        if not em:
+            continue
+        counts[em] = counts.get(em, 0) + 1
+        if reaction.user_id == current_user.id:
+            my_reaction = em
+    return serialize_message_entity(
+        message,
+        deletion,
+        my_reaction=my_reaction,
+        reaction_counts=counts,
+    )
+
+
+@app.post("/api/messages/{message_id}/transcribe", response_model=MessageRead)
+def transcribe_message_audio(
+    message_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    force: bool = Query(False),
+) -> MessageRead:
+    message = session.get(Message, message_id)
+    if not message:
+        raise HTTPException(status_code=404, detail="Mensagem não encontrada.")
+    if not message.conversation_id:
+        raise HTTPException(status_code=400, detail="Mensagem sem conversa associada.")
+    conversation = session.get(Conversation, message.conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    ensure_conversation_access(session, conversation, current_user)
+
+    if message.message_type != MessageType.audio:
+        raise HTTPException(status_code=400, detail="Transcrição disponível apenas para áudio.")
+    if not message.media_path:
+        raise HTTPException(status_code=400, detail="Áudio sem mídia associada.")
+
+    if message.audio_transcript and not force:
+        deletion = session.get(MessageDeletion, message_id)
+        reactions = session.exec(
+            select(MessageReaction).where(MessageReaction.message_id == message_id)
+        ).all()
+        counts: Dict[str, int] = {}
+        my_reaction: Optional[str] = None
+        for reaction in reactions:
+            em = (reaction.emoji or "").strip()
+            if not em:
+                continue
+            counts[em] = counts.get(em, 0) + 1
+            if reaction.user_id == current_user.id:
+                my_reaction = em
+        return serialize_message_entity(
+            message,
+            deletion,
+            my_reaction=my_reaction,
+            reaction_counts=counts,
+        )
+
+    message.audio_transcript_status = "processing"
+    message.audio_transcript_error = None
+    session.add(message)
+    session.commit()
+    session.refresh(message)
+
+    audio_bytes, storage_content_type, detected_name = load_media_bytes_from_storage(
+        message.media_path
+    )
+    content_type = storage_content_type or message.media_content_type
+    extension = guess_extension((content_type or "").split(";", 1)[0].strip().lower() or "") or ".bin"
+    filename = detected_name or f"audio-{message.id}{extension}"
+
+    try:
+        result = transcribe_audio_via_openai(
+            audio_bytes=audio_bytes,
+            filename=filename,
+            content_type=content_type,
+        )
+        transcript_text = (result.get("text") or "").strip()
+        model_used = (result.get("model") or "").strip() or None
+        message.audio_transcript = transcript_text
+        message.audio_transcript_model = model_used
+        message.audio_transcript_status = "done" if transcript_text else "empty"
+        message.audio_transcribed_at = datetime.utcnow()
+    except HTTPException as exc:
+        message.audio_transcript_status = "error"
+        message.audio_transcript_error = str(exc.detail)
+        session.add(message)
+        session.commit()
+        session.refresh(message)
+        raise
+    except Exception as exc:
+        logger.exception("Falha inesperada ao transcrever áudio: %s", exc)
+        message.audio_transcript_status = "error"
+        message.audio_transcript_error = "Falha ao transcrever áudio."
+        session.add(message)
+        session.commit()
+        session.refresh(message)
+        raise HTTPException(status_code=502, detail="Falha ao transcrever áudio.")
+
+    session.add(message)
+    session.commit()
+    session.refresh(message)
 
     deletion = session.get(MessageDeletion, message_id)
     reactions = session.exec(

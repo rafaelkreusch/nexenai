@@ -98,6 +98,11 @@ def apply_migrations() -> None:
             ("message", "original_content", "TEXT"),
             ("message", "edited_at", "TEXT"),
             ("message", "edited_by_user_id", "INTEGER"),
+            ("message", "audio_transcript", "TEXT"),
+            ("message", "audio_transcript_status", "TEXT"),
+            ("message", "audio_transcript_error", "TEXT"),
+            ("message", "audio_transcript_model", "TEXT"),
+            ("message", "audio_transcribed_at", "TEXT"),
             ("tag", "owner_user_id", "INTEGER REFERENCES user(id)"),
         ]
 
@@ -163,6 +168,11 @@ def apply_migrations() -> None:
             ("message", "original_content", "TEXT"),
             ("message", "edited_at", "TIMESTAMP"),
             ("message", "edited_by_user_id", "INTEGER"),
+            ("message", "audio_transcript", "TEXT"),
+            ("message", "audio_transcript_status", "TEXT"),
+            ("message", "audio_transcript_error", "TEXT"),
+            ("message", "audio_transcript_model", "TEXT"),
+            ("message", "audio_transcribed_at", "TIMESTAMP"),
         ]
         with engine.begin() as conn:
             master_added = False
