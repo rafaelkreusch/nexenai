@@ -575,6 +575,7 @@ const state = {
   conversationsLoadingMore: false,
   conversationsCursorUpdatedAt: null,
   conversationsCursorId: null,
+  dashboardConversationTotal: null,
 
   activeConversationType: "chats",
 
@@ -5880,13 +5881,18 @@ function renderChatReminders() {
 
   }
 
+  const nowMs = Date.now();
   const reminders = state.reminders
 
     .filter(
 
-      (reminder) =>
-
-        !reminder.is_done && reminder.conversation_id === conversation.id
+      (reminder) => {
+        if (reminder.is_done) return false;
+        if (reminder.conversation_id !== conversation.id) return false;
+        const dueDate = parseUtcDate(reminder.due_at);
+        if (!dueDate) return false;
+        return dueDate.getTime() <= nowMs;
+      }
 
     )
 
@@ -5924,7 +5930,7 @@ function renderChatReminders() {
 
     const dueDate = parseUtcDate(reminder.due_at);
 
-    if (dueDate && dueDate.getTime() < Date.now()) {
+    if (dueDate && dueDate.getTime() < nowMs) {
 
       pill.classList.add("overdue");
 
@@ -8010,6 +8016,7 @@ if (dashboardRefreshButton) {
     try {
       await Promise.all([
         loadConversations({ silent: true }),
+        loadConversationCount().catch(() => {}),
         loadReminders().catch(() => {}),
         loadBulkCampaigns().catch(() => {}),
       ]);
@@ -8131,6 +8138,9 @@ function openDashboardPanel() {
   workspace.classList.add("dashboard-active");
   dashboardPanel.classList.remove("hidden");
   setActiveNav("dashboard");
+  loadConversationCount()
+    .catch(() => {})
+    .finally(() => updateDashboard());
   updateDashboard();
 }
 
@@ -8424,7 +8434,11 @@ function buildDashboardList(listEl, items, buildItem, emptyMessage) {
 function updateDashboard() {
   if (!dashboardPanel) return;
   if (dashboardTotalConversationsEl) {
-    dashboardTotalConversationsEl.textContent = formatDashboardNumber(state.conversations.length);
+    const total =
+      Number.isFinite(state.dashboardConversationTotal) && state.dashboardConversationTotal !== null
+        ? state.dashboardConversationTotal
+        : state.conversations.length;
+    dashboardTotalConversationsEl.textContent = formatDashboardNumber(total);
   }
   if (dashboardUnreadConversationsEl) {
     const unread = state.conversations.filter((conversation) => Number(conversation?.unread_count) > 0).length;
@@ -11235,6 +11249,14 @@ function openReminderModal(preselectConversationId = null, options = {}) {
 
   loadReminders();
 
+}
+
+async function loadConversationCount() {
+  if (!state.token) return;
+  const scope = state.user?.is_admin ? "all" : "mine";
+  const data = await fetchJson(`/api/conversations/count?scope=${encodeURIComponent(scope)}`);
+  const total = Number(data?.total);
+  state.dashboardConversationTotal = Number.isFinite(total) ? total : null;
 }
 
 

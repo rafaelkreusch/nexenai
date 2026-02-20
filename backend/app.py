@@ -2141,6 +2141,25 @@ def list_conversations(
     return summaries
 
 
+@app.get("/api/conversations/count")
+def count_conversations(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    scope: str = Query("mine", regex="^(mine|all)$"),
+) -> Dict[str, int]:
+    base_query = select(func.count(Conversation.id)).where(
+        Conversation.organization_id == current_user.organization_id
+    )
+    if not current_user.is_admin or scope != "all":
+        base_query = base_query.where(Conversation.owner_user_id == current_user.id)
+    elif not getattr(current_user, "is_master_admin", False):
+        allowed_owner_ids = get_department_conversation_owner_ids(session, current_user)
+        base_query = base_query.where(Conversation.owner_user_id.in_(allowed_owner_ids))
+
+    total = int(session.exec(base_query).one() or 0)
+    return {"total": total}
+
+
 @app.post("/api/conversations", response_model=ConversationRead)
 def create_conversation(
     payload: ConversationCreate,
