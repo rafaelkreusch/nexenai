@@ -1033,11 +1033,10 @@ input::placeholder {
 
 
 
-  .chat-toolbar .tag-menu {
+  .tag-menu {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
-  left: auto;
+  left: 0;
   width: 280px;
   max-width: min(320px, calc(100vw - 18px));
   background: #202326;
@@ -1049,6 +1048,11 @@ input::placeholder {
   z-index: 220;
   max-height: min(72vh, 520px);
   overflow: auto;
+}
+
+  .chat-toolbar .tag-menu {
+  right: 0;
+  left: auto;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -1056,7 +1060,7 @@ input::placeholder {
 
 
 
-.chat-toolbar .tag-menu .tag-menu-list {
+.tag-menu .tag-menu-list {
 
   display: flex;
 
@@ -1068,11 +1072,13 @@ input::placeholder {
 
   overflow-y: auto;
 
+  padding-right: 0.25rem;
+
 }
 
 
 
-.chat-toolbar .tag-menu-list button {
+.tag-menu-list button {
 
   background: transparent;
 
@@ -1098,7 +1104,7 @@ input::placeholder {
 
 }
 
-.chat-toolbar .tag-menu-list button:hover {
+.tag-menu-list button:hover {
 
   background: rgba(255, 255, 255, 0.06);
 
@@ -1108,7 +1114,7 @@ input::placeholder {
 
 
 
-.chat-toolbar .tag-menu-list button.active {
+.tag-menu-list button.active {
 
   color: var(--primary);
 
@@ -1116,7 +1122,7 @@ input::placeholder {
 
 
 
-.chat-toolbar .tag-menu .tag-menu-item {
+.tag-menu .tag-menu-item {
 
   display: flex;
 
@@ -1126,17 +1132,35 @@ input::placeholder {
 
   gap: 0.4rem;
 
+  color: rgba(255, 255, 255, 0.9);
+
   font-size: 0.85rem;
 
-  padding: 0.3rem 0.1rem;
+  padding: 0.4rem 0.2rem;
+
+  width: 100%;
+
+  cursor: pointer;
 
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 
 }
 
+.chat-toolbar .tag-menu h4 {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.chat-toolbar .tag-form label {
+  display: block;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  margin-top: 0.25rem;
+}
 
 
-.chat-toolbar .tag-menu .tag-menu-item:last-child {
+
+.tag-menu .tag-menu-item:last-child {
 
   border-bottom: none;
 
@@ -1144,7 +1168,7 @@ input::placeholder {
 
 
 
-.chat-toolbar .tag-menu .empty {
+.tag-menu .empty {
 
   text-align: center;
 
@@ -1174,25 +1198,13 @@ input::placeholder {
 
 
 
-.chat-toolbar .tag-menu label {
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: space-between;
-
-  gap: 0.5rem;
-
-  width: 100%;
-
-  cursor: pointer;
-
+.tag-menu label {
+  color: rgba(255, 255, 255, 0.88);
 }
 
 
 
-.chat-toolbar .tag-menu input[type="checkbox"] {
+.tag-menu input[type="checkbox"] {
 
   accent-color: var(--primary);
 
